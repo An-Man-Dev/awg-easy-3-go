@@ -163,7 +163,9 @@ if [[ "$DEV_MODE" == false && "$UPDATE" == false ]]; then
 fi
 
 IPV6_ENABLED=false
-if [[ "$AWG_IPV6_MODE" != disabled ]] && ip -6 route get 2606:4700:4700::1111 >/dev/null 2>&1 && ip -6 address show scope global | grep -q 'inet6 [23]'; then IPV6_ENABLED=true; fi
+# Consume all address output: grep -q can SIGPIPE ip under pipefail when the
+# host has multiple IPv6 interfaces, incorrectly disabling a working IPv6 route.
+if [[ "$AWG_IPV6_MODE" != disabled ]] && ip -6 route get 2606:4700:4700::1111 >/dev/null 2>&1 && ip -6 address show scope global | grep 'inet6 [23]' >/dev/null; then IPV6_ENABLED=true; fi
 if [[ "$IPV6_ENABLED" == false && "$AWG_IPV6_MODE" != disabled ]]; then say 'No public IPv6 route detected. Installing in IPv4-only mode.'; fi
 say 'Building native AWG and the panel in isolated Docker build stages...'
 docker build --pull -t "$IMAGE" "$SOURCE_DIR"
