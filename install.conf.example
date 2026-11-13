@@ -1,0 +1,15 @@
+# Literal KEY=value format. Optional matching outer quotes are removed.
+# No shell evaluation, variable expansion, command substitution, or inline comments.
+# Environment variables take precedence over this file.
+AWG_HOST=vpn.example.com
+AWG_PORT=51820
+AWG_PANEL_PORT=8881
+# Empty disables the external listener and Docker TCP port publication.
+AWG_EXTERNAL_PANEL_BIND=
+# Host-side publication; only used when AWG_EXTERNAL_PANEL_BIND is nonempty.
+AWG_EXTERNAL_PANEL_PUBLISH=127.0.0.1:8881
+AWG_PUBLIC_ORIGIN=
+# Only list reverse proxies you control. Never trust 0.0.0.0/0.
+AWG_TRUSTED_PROXIES=172.30.88.1/32
+AWG_IPV6_MODE=auto
+AWG_PASSWORD=

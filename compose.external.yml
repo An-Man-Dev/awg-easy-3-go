@@ -1,0 +1,10 @@
+# Opt in: docker compose -f docker-compose.yml -f compose.external.yml up -d
+services:
+  panel:
+    environment:
+      AWG_EXTERNAL_PANEL_BIND: 0.0.0.0:${AWG_PANEL_PORT:-8881}
+    ports:
+      - target: ${AWG_PANEL_PORT:-8881}
+        published: "${AWG_PANEL_PORT:-8881}"
+        host_ip: 127.0.0.1
+        protocol: tcp

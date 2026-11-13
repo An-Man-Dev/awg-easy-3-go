@@ -1,0 +1,71 @@
+name: awg-panel
+
+services:
+  panel:
+    build:
+      context: .
+    image: awg-panel:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=8m,mode=755
+      - /tmp:rw,noexec,nosuid,size=8m,mode=1777
+    volumes:
+      - data:/data
+      - type: bind
+        source: ./web
+        target: /app/web
+        read_only: true
+        bind:
+          create_host_path: false
+          selinux: z
+      - type: bind
+        source: ${AWG_ADMIN_PASSWORD_PATH:-./secrets/admin-password}
+        target: /run/secrets/admin-password
+        read_only: true
+        bind:
+          create_host_path: false
+          selinux: Z
+    environment:
+      AWG_HOST: ${AWG_HOST:?Set AWG_HOST in .env or the environment}
+      AWG_PORT: ${AWG_PORT:-51820}
+      AWG_PANEL_PORT: ${AWG_PANEL_PORT:-8881}
+      AWG_IPV6_MODE: ${AWG_IPV6_MODE:-auto}
+      AWG_PASSWORD_FILE: /run/secrets/admin-password
+      AWG_EXTERNAL_PANEL_BIND: ""
+      AWG_PUBLIC_ORIGIN: ${AWG_PUBLIC_ORIGIN:-}
+      AWG_TRUSTED_PROXIES: ${AWG_TRUSTED_PROXIES:-}
+    ports:
+      - target: ${AWG_PORT:-51820}
+        published: "${AWG_PORT:-51820}"
+        host_ip: ${AWG_UDP_PUBLISH_HOST:-0.0.0.0}
+        protocol: udp
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    networks: [vpn]
+    stop_grace_period: 20s
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  vpn:
+    driver: bridge
+    # A dedicated network namespace, not host networking. Egress is required
+    # for VPN clients; Docker's internal:true would disable that egress.
+    internal: false
+    ipam:
+      config:
+        - subnet: ${AWG_DOCKER_SUBNET:-172.30.88.0/24}
+
+volumes:
+  data:

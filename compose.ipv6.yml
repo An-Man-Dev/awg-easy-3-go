@@ -1,0 +1,13 @@
+# Opt in only when the Docker host has working IPv6 egress.
+services:
+  panel:
+    sysctls:
+      net.ipv6.conf.all.forwarding: "1"
+      net.ipv6.conf.all.disable_ipv6: "0"
+networks:
+  vpn:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${AWG_DOCKER_SUBNET:-172.30.88.0/24}
+        - subnet: ${AWG_DOCKER_IPV6_SUBNET:-fd42:9::/64}

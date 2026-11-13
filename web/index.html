@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>AWG Panel · Private network</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="shell topbar">
+    <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">A</span><span>AWG <strong>Panel</strong></span></a>
+    <div class="actions"><button id="theme" class="quiet" aria-label="Switch color theme">Theme</button><button id="logout" class="quiet" hidden>Sign out</button></div>
+  </header>
+  <main class="shell">
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section id="login-view" class="login-card">
+      <span class="eyebrow">YOUR PRIVATE NETWORK</span>
+      <h1>A quieter corner<br>of the internet.</h1>
+      <p class="muted">Sign in to manage your devices and secure connections.</p>
+      <form id="login-form">
+        <label for="password">Admin password</label>
+        <input id="password" type="password" autocomplete="current-password" required minlength="12" maxlength="256" autofocus>
+        <button type="submit" class="primary wide">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="small muted">AmneziaWG 3 · Self-hosted, under your control</p>
+    </section>
+    <section id="dashboard" hidden>
+      <div class="page-heading"><div><span class="eyebrow">NETWORK OVERVIEW</span><h1>Your devices</h1><p class="muted">One private network. Access for everyone who needs it.</p></div><button id="add" class="primary">+ Add device</button></div>
+      <div class="stats"><div><span class="muted">Devices</span><strong id="device-count">—</strong></div><div><span class="muted">Enabled</span><strong id="enabled-count">—</strong></div><div><span class="muted">Network</span><strong id="network-mode">—</strong></div><div><span class="muted">VPN endpoint</span><strong id="endpoint" class="mono">—</strong></div></div>
+      <div class="toolbar"><label class="search-label" for="search">Find a device<input type="search" id="search" placeholder="Search by name or address"></label><label>Access group<select id="filter"><option value="all">All devices</option><option value="home">Home</option><option value="guest">Guest</option></select></label><button id="refresh" class="quiet">Refresh</button></div>
+      <div id="devices" class="device-grid"></div>
+      <p id="empty" class="empty" hidden>No devices match your search.</p>
+      <div class="group-guide"><p><strong>Home</strong> Internet, other home devices, and this admin panel.</p><p><strong>Guest</strong> Internet only. Private networks and admin services are blocked.</p></div>
+    </section>
+  </main>
+  <footer class="shell muted small">AWG Panel <span>Private by design.</span></footer>
+  <dialog id="device-dialog">
+    <form id="device-form"><div class="dialog-heading"><h2 id="device-title">Add device</h2><button type="button" class="quiet close-dialog" aria-label="Close">✕</button></div>
+      <label for="device-name">Device name</label><input id="device-name" maxlength="64" placeholder="e.g. My phone" required>
+      <label for="device-group">Access group</label><select id="device-group"><option value="home">Home — network and admin access</option><option value="guest">Guest — internet only</option></select>
+      <p class="muted small">Keep at least one home device enabled so you can reach your panel.</p><button class="primary wide" type="submit">Save device</button>
+    </form>
+  </dialog>
+  <dialog id="share-dialog">
+    <div class="dialog-heading"><h2 id="share-title">Connect device</h2><button class="quiet close-dialog" aria-label="Close">✕</button></div>
+    <p class="muted">Scan with AmneziaVPN or import the connection link.</p>
+    <img id="qr" width="384" height="384" alt="AmneziaVPN connection QR code">
+    <p id="qr-error" class="muted" hidden>QR is unavailable for this profile. Use the link or configuration file.</p>
+    <label for="vpn-link">Connection link</label><textarea id="vpn-link" readonly rows="3" spellcheck="false"></textarea>
+    <div class="actions"><button id="copy-link" class="primary">Copy link</button><a id="download" class="button quiet" download>Download .conf</a></div>
+    <p class="small muted">This link and QR code contain private keys. Share them only with the device owner.</p>
+  </dialog>
+  <dialog id="delete-dialog"><form id="delete-form"><div class="dialog-heading"><h2>Remove device?</h2><button class="quiet close-dialog" type="button" aria-label="Close">✕</button></div><p id="delete-description"></p><p class="muted">Its existing configuration will stop working.</p><button class="danger wide" type="submit">Remove device</button></form></dialog>
+</body>
+</html>
