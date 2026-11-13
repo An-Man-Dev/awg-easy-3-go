@@ -49,7 +49,11 @@ replacement for those terms and does not grant a license to legacy source files.
 - Official control protocol: https://github.com/amnezia-vpn/amneziawg-go/blob/b5928efb6ca19f0153958460c3d141f04abc5c2e/device/uapi.go
 - Official share-link codec: https://github.com/amnezia-vpn/config-decoder/blob/master/mainwindow.cpp
 - AmneziaVPN client: https://github.com/amnezia-vpn/amnezia-client
+- Official multipart QR framing: https://github.com/amnezia-vpn/amnezia-client/blob/2bd60309d03a15d1278b7f777bd77ff8054a17cd/client/core/utils/qrCodeUtils.cpp
 - Official AWG JSON model: https://github.com/amnezia-vpn/amnezia-client/blob/dev/client/core/models/protocols/awgProtocolConfig.cpp
 
 The official link codec uses Qt qCompress: a four-byte big-endian uncompressed
 length followed by zlib, encoded as URL-safe base64 without trailing padding.
+QR export instead wraps 850-byte pieces of that compressed data in QDataStream
+records (magic 1984, total count, zero-based index, QByteArray) and base64url
+encodes each record. QR images do not contain the clipboard `vpn://` prefix.

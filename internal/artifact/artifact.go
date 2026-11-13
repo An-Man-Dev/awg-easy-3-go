@@ -87,3 +87,33 @@ func Link(s model.State, p model.Peer, c config.Config, v6 bool) (string, error)
 	}
 	return "vpn://" + base64.RawURLEncoding.EncodeToString(out.Bytes()), nil
 }
+
+// QRChunks uses AmneziaVPN's QDataStream framing, which differs from a vpn://
+// clipboard link: int16 magic, uint8 count, uint8 index, then QByteArray
+// (uint32 length + bytes), all big-endian and base64url encoded without padding.
+// The official exporter splits the Qt-compressed configuration every 850 bytes.
+func QRChunks(link string) ([]string, error) {
+	if !strings.HasPrefix(link, "vpn://") {
+		return nil, fmt.Errorf("invalid connection link")
+	}
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(link, "vpn://"))
+	if err != nil || len(data) < 5 {
+		return nil, fmt.Errorf("invalid compressed connection data")
+	}
+	const chunkSize = 850
+	count := (len(data) + chunkSize - 1) / chunkSize
+	if count > 255 {
+		return nil, fmt.Errorf("configuration is too large for QR export")
+	}
+	chunks := make([]string, 0, count)
+	for start := 0; start < len(data); start += chunkSize {
+		end := min(start+chunkSize, len(data))
+		frame := make([]byte, 8+end-start)
+		binary.BigEndian.PutUint16(frame[:2], 1984)
+		frame[2], frame[3] = byte(count), byte(start/chunkSize)
+		binary.BigEndian.PutUint32(frame[4:8], uint32(end-start))
+		copy(frame[8:], data[start:end])
+		chunks = append(chunks, base64.RawURLEncoding.EncodeToString(frame))
+	}
+	return chunks, nil
+}

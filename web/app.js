@@ -3,6 +3,7 @@
 const $ = id => document.getElementById(id);
 let csrf = '', peers = [], editing = null, deleting = null;
 let shareSequence = 0;
+let qrFrames = [], qrPart = 0, qrTimer = null;
 const notify = (message, error = false) => {
   $('notice').textContent = message;
   $('notice').className = error ? 'notice error' : 'notice';
@@ -78,19 +79,65 @@ function edit(peer = null) {
   $('device-dialog').showModal(); notify(''); $('device-name').focus();
 }
 function clearShare() {
+  clearInterval(qrTimer); qrTimer = null;
+  qrFrames.forEach(url => URL.revokeObjectURL(url)); qrFrames = []; qrPart = 0;
+  $('qr-controls').hidden = true;
   shareSequence++; $('vpn-link').value = ''; $('qr').removeAttribute('src'); $('download').removeAttribute('href');
 }
+function showQrPart(part) {
+  if (!qrFrames.length) return;
+  qrPart = (part + qrFrames.length) % qrFrames.length;
+  $('qr').src = qrFrames[qrPart];
+  $('qr-count').textContent = `QR ${qrPart + 1} of ${qrFrames.length}`;
+}
+function pauseQr() {
+  clearInterval(qrTimer); qrTimer = null; $('qr-pause').textContent = 'Play';
+}
+function playQr() {
+  if (qrFrames.length < 2) return;
+  clearInterval(qrTimer);
+  qrTimer = setInterval(() => showQrPart(qrPart + 1), 1500);
+  $('qr-pause').textContent = 'Pause';
+}
 async function share(peer) {
-  const sequence = ++shareSequence;
+  clearShare();
+  const sequence = shareSequence;
   const result = await api(`/peers/${peer.id}/link`);
   if (sequence !== shareSequence) return;
   $('share-title').textContent = `Connect ${peer.name}`; $('vpn-link').value = result.link;
   $('download').href = `/api/peers/${peer.id}/config`;
-  $('qr').hidden = false; $('qr-error').hidden = true;
-  $('qr').src = `/api/peers/${peer.id}/qr`;
+  $('qr').hidden = true; $('qr-error').hidden = true;
+  $('qr-help').textContent = 'Loading QR codes…';
   $('share-dialog').showModal();
+  const frames = [];
+  try {
+    for (let part = 0; part < result.qrParts; part++) {
+      const response = await fetch(`/api/peers/${peer.id}/qr?part=${part}`);
+      if (!response.ok) throw new Error('QR export failed');
+      const blob = await response.blob();
+      if (sequence !== shareSequence) return;
+      frames.push(URL.createObjectURL(blob));
+    }
+    if (!frames.length) throw new Error('QR export is unavailable');
+    qrFrames = frames; showQrPart(0); $('qr').hidden = false;
+    $('qr-controls').hidden = frames.length === 1;
+    $('qr-help').textContent = frames.length > 1
+      ? `Keep the AmneziaVPN scanner open until all ${frames.length} QR codes are scanned. Codes change automatically.`
+      : 'Scan inside AmneziaVPN, or import the connection link.';
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) playQr();
+    else pauseQr();
+  } catch (error) {
+    if (sequence === shareSequence) {
+      $('qr-help').textContent = 'Import the connection link instead.'; $('qr-error').hidden = false;
+    }
+  } finally {
+    if (qrFrames !== frames) frames.forEach(url => URL.revokeObjectURL(url));
+  }
 }
-$('qr').addEventListener('error', () => { $('qr').hidden = true; $('qr-error').hidden = false; });
+$('qr').addEventListener('error', () => { pauseQr(); $('qr').hidden = true; $('qr-error').hidden = false; });
+$('qr-prev').addEventListener('click', () => { pauseQr(); showQrPart(qrPart - 1); });
+$('qr-next').addEventListener('click', () => { pauseQr(); showQrPart(qrPart + 1); });
+$('qr-pause').addEventListener('click', () => { if (qrTimer) pauseQr(); else playQr(); });
 $('share-dialog').addEventListener('close', clearShare);
 $('copy-link').addEventListener('click', () => busy($('copy-link'), async () => {
   if (navigator.clipboard && window.isSecureContext) {

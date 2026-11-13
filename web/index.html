@@ -45,8 +45,9 @@
   </dialog>
   <dialog id="share-dialog">
     <div class="dialog-heading"><h2 id="share-title">Connect device</h2><button class="quiet close-dialog" aria-label="Close">✕</button></div>
-    <p class="muted">Scan with AmneziaVPN or import the connection link.</p>
+    <p id="qr-help" class="muted">Scan inside AmneziaVPN, or import the connection link.</p>
     <img id="qr" width="384" height="384" alt="AmneziaVPN connection QR code">
+    <div id="qr-controls" class="actions" hidden><button id="qr-prev" class="quiet" aria-label="Previous QR code">Previous</button><span id="qr-count"></span><button id="qr-next" class="quiet" aria-label="Next QR code">Next</button><button id="qr-pause" class="quiet">Pause</button></div>
     <p id="qr-error" class="muted" hidden>QR is unavailable for this profile. Use the link or configuration file.</p>
     <label for="vpn-link">Connection link</label><textarea id="vpn-link" readonly rows="3" spellcheck="false"></textarea>
     <div class="actions"><button id="copy-link" class="primary">Copy link</button><a id="download" class="button quiet" download>Download .conf</a></div>

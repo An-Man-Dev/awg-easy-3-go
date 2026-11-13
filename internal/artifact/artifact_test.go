@@ -113,3 +113,64 @@ func TestServerExcludesDisabledPeersAndQuickFields(t *testing.T) {
 		t.Fatal("server peer routes are missing")
 	}
 }
+
+func TestQRChunksQtFramingAndBoundaries(t *testing.T) {
+	for _, size := range []int{5, 849, 850, 851, 1700, 1701, 850 * 255} {
+		data := bytes.Repeat([]byte{0x42}, size)
+		chunks, err := QRChunks("vpn://" + base64.RawURLEncoding.EncodeToString(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored []byte
+		for i, chunk := range chunks {
+			frame, err := base64.RawURLEncoding.DecodeString(chunk)
+			if err != nil || len(frame) < 8 {
+				t.Fatalf("invalid QR frame: %v", err)
+			}
+			// QDataStream uses big-endian int16 1984, uint8 count/index,
+			// and a uint32 length before each QByteArray's bytes.
+			if frame[0] != 0x07 || frame[1] != 0xc0 || int(frame[2]) != len(chunks) || int(frame[3]) != i {
+				t.Fatalf("invalid Qt header for size %d, part %d", size, i)
+			}
+			n := int(binary.BigEndian.Uint32(frame[4:8]))
+			if n != len(frame)-8 || n > 850 || (i < len(chunks)-1 && n != 850) {
+				t.Fatal("invalid QByteArray chunk length")
+			}
+			restored = append(restored, frame[8:]...)
+		}
+		if !bytes.Equal(restored, data) {
+			t.Fatal("QR series lost configuration bytes")
+		}
+	}
+	for _, link := range []string{"", "https://example.com", "vpn://!", "vpn://YQ", "vpn://" + base64.RawURLEncoding.EncodeToString(make([]byte, 850*255+1))} {
+		if _, err := QRChunks(link); err == nil {
+			t.Fatal("accepted invalid or oversized QR data")
+		}
+	}
+}
+
+func TestQRChunksPreserveConnectionLink(t *testing.T) {
+	s, err := model.NewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := Link(s, s.Peers[0], config.Config{Host: "vpn.example.com", Port: 51820}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, err := QRChunks(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var joined []byte
+	for _, chunk := range chunks {
+		frame, err := base64.RawURLEncoding.DecodeString(chunk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined = append(joined, frame[8:]...)
+	}
+	if "vpn://"+base64.RawURLEncoding.EncodeToString(joined) != link {
+		t.Fatal("QR config differs from clipboard config")
+	}
+}

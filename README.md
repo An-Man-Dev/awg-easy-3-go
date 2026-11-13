@@ -333,9 +333,12 @@ allowlist, with ETags and revalidation. API responses and exports are not cached
 ## Export and API
 
 Each device has a `.conf` download, a compressed official `vpn://` link, and a
-server-generated PNG QR code containing that link. Oversized QR payloads return
-an explicit error with link/file alternatives. Share artifacts contain private
-keys. The official Qt codec and AWG parser references are listed in
+series of server-generated PNG QR codes in AmneziaVPN's native QR format.
+Keep the scanner inside AmneziaVPN open until it has read every frame; the panel
+cycles through them automatically and also provides pause/previous/next controls.
+QR frames use Qt QDataStream framing and 850-byte chunks, matching the official
+exporter. They are distinct from clipboard links and AmneziaWG's native `.conf`
+QR format. Share artifacts contain private keys. The official Qt codec and AWG parser references are listed in
 `THIRD_PARTY_NOTICES.md`.
 
 | Method | Path | Purpose |
@@ -346,8 +349,8 @@ keys. The official Qt codec and AWG parser references are listed in
 | GET / POST | `/api/peers` | List or create devices |
 | PATCH / DELETE | `/api/peers/{id}` | Update or remove a device |
 | GET | `/api/peers/{id}/config` | Download native configuration |
-| GET | `/api/peers/{id}/link` | Export compressed URI |
-| GET | `/api/peers/{id}/qr` | Export a PNG QR code |
+| GET | `/api/peers/{id}/link` | Export compressed URI and `qrParts` count |
+| GET | `/api/peers/{id}/qr?part=0` | Export a PNG QR frame (zero-based index; default 0) |
 
 All routes except login require a session. Mutation JSON rejects unknown fields
 and is limited to 8 KiB. No private keys appear in device list responses.

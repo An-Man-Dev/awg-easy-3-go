@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,6 +95,31 @@ func TestAuthenticationCSRFAndExports(t *testing.T) {
 			cfg, err := png.DecodeConfig(bytes.NewReader(w.Body.Bytes()))
 			if err != nil || cfg.Width != 768 {
 				t.Fatalf("invalid QR PNG: %v", err)
+			}
+		}
+		if kind == "link" {
+			var export struct {
+				Link  string `json:"link"`
+				Parts int    `json:"qrParts"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &export); err != nil || export.Parts < 1 || !strings.HasPrefix(export.Link, "vpn://") {
+				t.Fatal("missing QR series metadata")
+			}
+			var previous []byte
+			for part := 0; part < export.Parts; part++ {
+				frame := request(a, "GET", "/api/peers/"+id+"/qr?part="+strconv.Itoa(part), "", cookie, "", origin)
+				if frame.Code != 200 || frame.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("QR part unavailable or cacheable")
+				}
+				if _, err := png.Decode(bytes.NewReader(frame.Body.Bytes())); err != nil || bytes.Equal(previous, frame.Body.Bytes()) {
+					t.Fatal("QR part is invalid or repeats the previous frame")
+				}
+				previous = bytes.Clone(frame.Body.Bytes())
+			}
+			for _, part := range []string{"-1", "invalid", strconv.Itoa(export.Parts)} {
+				if frame := request(a, "GET", "/api/peers/"+id+"/qr?part="+part, "", cookie, "", origin); frame.Code != 400 {
+					t.Fatal("invalid QR part accepted")
+				}
 			}
 		}
 	}

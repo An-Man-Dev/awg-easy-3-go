@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"awg-panel/internal/artifact"
 	"awg-panel/internal/config"
 	"awg-panel/internal/model"
 	"awg-panel/internal/service"
@@ -383,9 +384,24 @@ func (a *API) peer(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="awg-%s.conf"`, id))
 		_, _ = io.WriteString(w, value)
 	case "link":
-		jsonReply(w, 200, map[string]string{"link": value})
+		// A profile too large for QR must still offer the clipboard link.
+		chunks, _ := artifact.QRChunks(value)
+		jsonReply(w, 200, map[string]any{"link": value, "qrParts": len(chunks)})
 	case "qr":
-		png, err := qrcode.Encode(value, qrcode.Medium, 768)
+		chunks, err := artifact.QRChunks(value)
+		if err != nil {
+			problem(w, 422, "QR is unavailable for this profile")
+			return
+		}
+		part := 0
+		if raw := r.URL.Query().Get("part"); raw != "" {
+			part, err = strconv.Atoi(raw)
+		}
+		if err != nil || part < 0 || part >= len(chunks) {
+			problem(w, 400, "Invalid QR part")
+			return
+		}
+		png, err := qrcode.Encode(chunks[part], qrcode.Low, 768)
 		if err != nil {
 			problem(w, 422, "This profile is too large for a QR code; use the link or configuration file")
 			return
