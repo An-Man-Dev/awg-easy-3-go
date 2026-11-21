@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>AWG Panel</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=account-compact-20261122">
+  <script src="/app.js?v=account-compact-20261122" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="#devices" id="brand" class="brand"><span class="brand-mark" aria-hidden="true"></span><span>AWG Panel</span></a>
+    <span id="server-name-display" class="muted"></span>
+    <div class="actions"><span id="signed-in-as" class="small muted" hidden></span><button id="theme" class="quiet">Theme</button><button id="logout" class="quiet" hidden>Sign out</button></div>
+  </header>
+  <div class="app-layout">
+  <nav id="navigation" aria-label="Main navigation" hidden>
+    <button id="my-devices">My devices</button><button id="accounts" hidden>Accounts</button>
+    <span class="nav-label">My account</span><button id="security" hidden>Two-factor</button><button id="own-password" hidden>Password</button>
+    <div id="server-navigation" hidden><span class="nav-label">Server</span><button id="settings" hidden>Settings</button><button id="key-policy">Client keys</button><button id="change-addresses">Addresses</button><button id="transfer">Export / import</button><button id="audit" hidden>Activity log</button></div>
+  </nav>
+  <main id="workspace">
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section id="login-view" class="login-card">
+      <h1>Sign in</h1>
+      <form id="login-form">
+        <label for="login-name">Login</label><input id="login-name" autocomplete="username" value="admin" required maxlength="64" spellcheck="false" autocapitalize="none">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required maxlength="256" autofocus>
+        <button type="submit" class="primary wide">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <form id="login-mfa-form" hidden>
+        <label for="login-code">Authenticator or recovery code</label><input id="login-code" autocomplete="one-time-code" maxlength="64" required spellcheck="false">
+        <p class="small muted">Enter a fresh 6-digit authenticator code or one unused recovery code. Codes are accepted only once. This sign-in expires after 5 minutes.</p>
+        <button type="submit" class="primary wide">Verify and sign in</button><button id="login-back" type="button" class="quiet wide">Back to password</button>
+      </form>
+
+    </section>
+    <section id="dashboard" class="panel" hidden>
+      <div class="page-heading"><div><button id="devices-back" class="quiet" hidden>← Accounts</button><h1 id="devices-title">My devices</h1></div><button id="add" class="primary">+ Add device</button></div>
+      <div class="stats"><div><span class="muted">Devices</span><strong id="device-count">—</strong></div><div><span class="muted">Enabled</span><strong id="enabled-count">—</strong></div><div><span class="muted">Network</span><strong id="network-mode">—</strong></div><div><span class="muted">VPN endpoint</span><strong id="endpoint" class="mono">—</strong></div></div>
+      <div class="toolbar"><label class="search-label" for="search">Find a device<input type="search" id="search" placeholder="Search by name or address"></label><label>Access group<select id="filter"><option value="all">All devices</option><option value="home">Home</option><option value="guest">Guest</option></select></label><button id="refresh" class="quiet">Refresh</button></div>
+
+      <div id="devices" class="device-grid"></div>
+      <p id="empty" class="empty" hidden>No devices match your search.</p>
+
+    </section>
+
+  <section id="settings-dialog" aria-labelledby="settings-title" class="panel" hidden>
+    <form id="settings-form">
+      <div class="dialog-heading"><h2 id="settings-title">Server settings</h2><button type="button" class="quiet close-dialog" aria-label="Close settings">Back</button></div>
+      <p class="muted" id="settings-scope">These settings are used the next time any device configuration is exported. Profiles already installed on devices do not update automatically.</p>
+      <label for="settings-name">Server name</label><input id="settings-name" maxlength="64" required autocomplete="off" aria-describedby="settings-name-help">
+      <p class="small muted field-help" id="settings-name-help">Shown in this panel and newly exported connection links.</p>
+      <fieldset><legend>Client connection</legend>
+        <div class="settings-grid">
+          <div><label for="settings-dns1">Primary DNS</label><input id="settings-dns1" required spellcheck="false" autocomplete="off" placeholder="1.1.1.1"></div>
+          <div><label for="settings-dns2">Secondary DNS <span class="muted">(optional)</span></label><input id="settings-dns2" spellcheck="false" autocomplete="off" placeholder="9.9.9.9"></div>
+          <div><label for="settings-mtu">MTU</label><input id="settings-mtu" type="number" min="1280" max="9000" required aria-describedby="settings-mtu-help"><p class="small muted field-help" id="settings-mtu-help">1280 is the default. Larger values depend on the network path.</p></div>
+          <div><label for="settings-keepalive">Keepalive (seconds)</label><input id="settings-keepalive" type="number" min="0" max="65535" required aria-describedby="settings-keepalive-help"><p class="small muted field-help" id="settings-keepalive-help">Set to 0 to disable periodic keepalive packets.</p></div>
+        </div>
+        <label for="settings-routes">Client routes</label><textarea id="settings-routes" rows="4" required spellcheck="false" placeholder="0.0.0.0/0&#10;::/0" aria-describedby="settings-routes-help"></textarea>
+        <p class="small muted field-help" id="settings-routes-help">One network CIDR per line. Use 0.0.0.0/0 and ::/0 for a full tunnel. Guest access restrictions still apply.</p>
+        <p id="settings-ipv6-note" class="small muted" hidden>This server currently provides IPv4 only. IPv6 DNS and routes will not have IPv6 connectivity through this server.</p>
+      </fieldset>
+      <div class="actions settings-actions"><button type="button" id="settings-reload" class="quiet">Reload saved values</button><button type="submit" class="primary">Save settings</button></div>
+    </form>
+
+  </section>
+
+  <section id="transfer-dialog" aria-labelledby="transfer-title" class="panel" hidden>
+    <div class="dialog-heading"><h2 id="transfer-title">Move server</h2><button type="button" class="quiet close-dialog" aria-label="Close transfer">Back</button></div>
+    <p class="muted">Transfer accounts, passwords, two-factor authentication, devices and application settings to a fresh installation. Activity history and sessions are excluded. Configure DNS, Caddy and the host separately.</p>
+    <p class="small muted">Keep the same VPN hostname and UDP port to reuse installed profiles. Account for DNS TTL; clients may need a tunnel restart to resolve the new IP. Profiles using a literal IP need an endpoint update. Active connections will be interrupted.</p>
+    <p id="transfer-requirements" class="small muted"></p>
+    <form id="transfer-export-form">
+      <fieldset><legend>Export encrypted configuration</legend>
+        <label class="confirmation"><input id="transfer-keys" type="checkbox" checked> Include saved client private keys</label>
+        <p class="small muted">Without client private keys, existing VPN profiles still work after the move, but the panel cannot download them again. Server keys, preshared keys, password hashes and TOTP secrets are always included in the encrypted file.</p>
+        <label for="transfer-mode">Encryption method</label><select id="transfer-mode"><option value="password">Password (12–256 bytes)</option><option value="key">256-bit key (Base64)</option></select>
+        <label for="transfer-export-secret">Archive password or key</label><input id="transfer-export-secret" type="password" required maxlength="256" autocomplete="off" spellcheck="false">
+        <button id="transfer-generate" type="button" class="quiet" hidden>Generate and download a key</button>
+        <p class="small muted">Keep the archive credential separately. It is required to decrypt the file and cannot be recovered by the panel.</p>
+        <label for="transfer-export-password">Current account password</label><input id="transfer-export-password" type="password" required maxlength="256" autocomplete="current-password">
+        <label for="transfer-export-code">Authenticator or recovery code (if enabled)</label><input id="transfer-export-code" autocomplete="off" maxlength="64" spellcheck="false">
+        <button type="submit" class="primary">Download encrypted archive</button>
+      </fieldset>
+    </form>
+    <p id="transfer-unavailable" class="muted" hidden>Import requires a fresh installation before creating accounts or changing devices. Export is still available.</p>
+    <form id="transfer-import-form">
+      <fieldset><legend>Import to this fresh installation</legend>
+        <p class="muted">Open the external panel address. Import replaces the initial account and VPN profile. Use the source server's login and second factor afterwards. Both servers must use matching VPN and panel ports and IPv6 mode.</p>
+        <label for="transfer-file">Encrypted archive (up to 8 MiB)</label><input id="transfer-file" type="file" accept=".awgbackup" required>
+        <label for="transfer-import-secret">Archive password or key</label><input id="transfer-import-secret" type="password" required maxlength="256" autocomplete="off" spellcheck="false">
+        <label for="transfer-import-password">Current account password on this server</label><input id="transfer-import-password" type="password" required maxlength="256" autocomplete="current-password">
+        <label for="transfer-import-code">Authenticator or recovery code (if enabled)</label><input id="transfer-import-code" autocomplete="off" maxlength="64" spellcheck="false">
+        <button type="submit" class="primary">Preview import</button>
+      </fieldset>
+    </form>
+    <form id="transfer-confirm-form" hidden>
+      <h3>Review import</h3><div id="transfer-summary"></div>
+      <p class="muted">Preview expires after 5 minutes. Prepare the new server and its external access before switching DNS. Shut down the old VPN server when switching over.</p>
+      <label class="confirmation"><input id="transfer-confirm" type="checkbox" required> Replace this installation with the configuration above and sign out all sessions.</label>
+      <button type="submit" class="danger">Import configuration</button>
+    </form>
+  </section>
+  <section id="key-policy-dialog" aria-labelledby="key-policy-title" class="panel" hidden>
+    <form id="key-policy-form">
+      <div class="dialog-heading"><h2 id="key-policy-title">Client key storage</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <label class="confirmation"><input id="retain-keys" type="checkbox"> Store private keys for newly created and reissued devices</label>
+      <p class="muted">When off, new profiles are shown once, for up to 5 minutes. Download or import them before leaving this page. If the response is lost, reissue the device; its previous profile will stop working.</p>
+      <p class="muted">Turning storage off keeps existing saved keys. Turning it back on cannot restore deleted or unsaved keys.</p>
+      <p id="stored-key-count"></p>
+      <div class="actions"><button type="button" id="key-policy-reload" class="quiet">Reload saved policy</button><button type="submit" class="primary">Save policy</button></div>
+    </form>
+    <div id="purge-offer" hidden><hr><p>Storage is off. You can keep the existing keys or delete them separately.</p><button id="purge-keys" class="danger">Delete stored client keys…</button></div>
+  </section>
+  <section id="purge-dialog" aria-labelledby="purge-title" class="panel" hidden>
+    <form id="purge-form">
+      <div class="dialog-heading"><h2 id="purge-title">Delete stored client keys?</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <p id="purge-count"></p><p class="muted">Existing tunnels will keep working. Configs, links and QR codes for these devices will no longer be exportable. Enabling storage later will not recover these keys.</p>
+      <p class="small muted">Server keys, device addresses, public keys and required preshared keys are retained. Downloaded files and external copies are unaffected; physical erasure from snapshots or hardware is not guaranteed.</p>
+      <label class="confirmation"><input id="purge-confirm" type="checkbox" required> I understand that these client keys cannot be recovered from the panel.</label>
+      <button type="submit" class="danger wide">Delete stored client keys</button>
+    </form>
+  </section>
+  <section id="reissue-dialog" aria-labelledby="reissue-title" class="panel" hidden>
+    <form id="reissue-form">
+      <div class="dialog-heading"><h2 id="reissue-title">Reissue device profile?</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <p id="reissue-name"></p><p class="muted">This replaces the device keys. Its old profile will stop working. Its name, addresses and access group stay the same. Activity history starts again with the new keys.</p>
+      <p class="muted">If storage is off, save the new profile immediately. Reissue your current VPN device from another home device or the external panel.</p>
+      <label class="confirmation"><input id="reissue-confirm" type="checkbox" required> I understand that the old profile will lose access.</label>
+      <button type="submit" class="danger wide">Reissue profile</button>
+    </form>
+  </section>
+  <section id="addresses-dialog" aria-labelledby="addresses-title" class="panel" hidden>
+    <form id="addresses-form">
+      <div class="dialog-heading"><h2 id="addresses-title">Server addresses</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <p class="muted">Prepare DNS, HTTPS and your reverse proxy before saving. This changes the application only.</p>
+      <label for="vpn-host">VPN domain or IP</label><input id="vpn-host" required autocomplete="off" spellcheck="false" placeholder="vpn.example.com">
+      <p class="small muted">No scheme or port. If this hostname or IP changes, update Endpoint in installed client profiles. Device keys and VPN addresses stay the same; reissuing profiles is not required.</p>
+      <label for="panel-origin">Public panel address (optional)</label><input id="panel-origin" type="url" autocomplete="off" spellcheck="false" placeholder="https://panel.example.com">
+      <p class="small muted">HTTPS origin only, with no path. Leave empty for access through the VPN or local proxy setup. The previous public origin will stop being accepted.</p>
+      <p class="muted">Saving briefly reapplies network rules and signs out all panel sessions.</p>
+      <label class="confirmation"><input id="addresses-confirm" type="checkbox" required> I have prepared the new addresses and understand that I will need to sign in again.</label>
+      <div class="actions"><button id="addresses-reload" type="button" class="quiet">Reload saved values</button><button type="submit" class="primary">Save addresses and sign out</button></div>
+    </form>
+  </section>
+  <section id="password-dialog" aria-labelledby="password-title" class="panel" hidden>
+    <form id="password-form">
+      <div class="dialog-heading"><h2 id="password-title">Change password</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <p class="muted">Changing your password signs out all your sessions, including this one. VPN connections stay active.</p>
+      <label for="current-password">Current password</label><input id="current-password" type="password" autocomplete="current-password" maxlength="256" required>
+      <label for="new-password">New password</label><input id="new-password" type="password" autocomplete="new-password" maxlength="256" required>
+      <label for="confirm-password">Confirm new password</label><input id="confirm-password" type="password" autocomplete="new-password" maxlength="256" required>
+      <p class="small muted">Use 12–256 bytes. Unicode characters may take more than one byte.</p>
+      <div id="password-mfa-field" hidden><label for="password-mfa">Authenticator or recovery code</label><input id="password-mfa" autocomplete="one-time-code" maxlength="64" spellcheck="false"></div>
+      <button type="submit" class="primary wide">Change password and sign out</button>
+    </form>
+  </section>
+  <section id="device-dialog" class="panel" hidden>
+    <form id="device-form"><div class="dialog-heading"><h2 id="device-title">Add device</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+      <label for="device-name">Device name</label><input id="device-name" maxlength="64" placeholder="e.g. My phone" required>
+      <div id="device-owner-field"><label for="device-owner">Owner</label><select id="device-owner"></select></div>
+      <label for="device-group">Access group</label><select id="device-group"><option value="home">Home — shared network and panel access</option><option value="guest">Guest — internet only</option></select>
+      <p class="muted small">Keep at least one home device enabled so you can reach your panel. A new profile opens immediately after creation; save it before closing if key storage is off.</p><button class="primary wide" type="submit">Save device</button>
+    </form>
+  </section>
+  <section id="share-dialog" class="panel" hidden>
+    <div class="dialog-heading"><h2 id="share-title">Connect device</h2><button class="quiet close-dialog" aria-label="Close">Back</button></div>
+    <p id="qr-help" class="muted">Scan inside AmneziaVPN, or import the connection link.</p>
+    <img id="qr" width="384" height="384" alt="AmneziaVPN connection QR code">
+    <div id="qr-controls" class="actions" hidden><button id="qr-prev" class="quiet" aria-label="Previous QR code">Previous</button><span id="qr-count"></span><button id="qr-next" class="quiet" aria-label="Next QR code">Next</button><button id="qr-pause" class="quiet">Pause</button></div>
+    <p id="qr-error" class="muted" hidden>QR is unavailable for this profile. Use the link or configuration file.</p>
+    <p id="share-storage" class="small muted"></p><label for="vpn-link">Connection link</label><textarea id="vpn-link" readonly rows="3" spellcheck="false"></textarea>
+    <div class="actions"><button id="copy-link" class="primary">Copy link</button><a id="download" class="button quiet" download>Download .conf</a></div>
+    <p class="small muted">This link and QR code contain private keys. Share them only with the device owner.</p>
+  </section>
+  <section id="delete-dialog" class="panel" hidden><form id="delete-form"><div class="dialog-heading"><h2>Remove device?</h2><button class="quiet close-dialog" type="button" aria-label="Close">Back</button></div><p id="delete-description"></p><p class="muted">Its existing configuration will stop working.</p><button class="danger wide" type="submit">Remove device</button></form></section>
+
+  <section id="accounts-dialog" aria-labelledby="accounts-title" class="panel" hidden>
+    <div class="dialog-heading"><h2 id="accounts-title">Accounts</h2><button class="quiet close-dialog" aria-label="Close accounts">Back</button></div>
+
+    <div class="actions"><button id="account-add" class="primary">Add account</button><button id="accounts-reload" class="quiet">Refresh</button></div>
+    <div id="account-list" class="account-list"></div>
+  </section>
+  <section id="account-edit-dialog" aria-labelledby="account-edit-title" class="panel" hidden>
+    <form id="account-form">
+      <div class="dialog-heading"><h2 id="account-edit-title">Add account</h2><button type="button" class="quiet close-dialog" aria-label="Close account form">Back</button></div>
+      <label for="account-login">Login</label><input id="account-login" required maxlength="64" pattern="[a-z0-9][a-z0-9_.\-]{0,63}" autocomplete="off" spellcheck="false" autocapitalize="none">
+      <p class="small muted">Lowercase letters, digits, dots, underscores and hyphens. Start with a letter or digit.</p>
+      <div id="account-note-field"><label for="account-note">Administrator note</label><textarea id="account-note" rows="3" maxlength="2000" aria-describedby="account-note-help"></textarea><p id="account-note-help" class="small muted">Visible only to the managing administrator and superadministrator. Transfers with the user. Up to 2000 UTF-8 bytes.</p></div>
+      <label for="account-role">Role</label><select id="account-role"><option value="user">User</option><option value="admin">Administrator</option><option value="superadmin">Superadministrator</option></select>
+      <div id="account-manager-field"><label for="account-manager">Managing administrator</label><select id="account-manager"></select><p class="small muted">Transferring a user also transfers management of their devices. The previous administrator loses access.</p></div>
+      <label class="confirmation"><input type="checkbox" id="account-enabled" checked> Account enabled</label>
+      <p class="muted">Blocking an account signs it out and disables its VPN access. Blocking an administrator also blocks their users. Unblocking restores only devices whose own switch is enabled.</p>
+      <label class="confirmation" id="account-block-field" hidden><input type="checkbox" id="account-block-confirm"> I understand that this will interrupt VPN connections.</label>
+      <div id="account-password-field"><label for="account-password">Password <span id="account-password-optional" class="muted">(leave empty to keep current)</span></label><input id="account-password" type="password" autocomplete="new-password" maxlength="256"><p class="small muted">12–256 bytes. Resetting a password signs out that account. Share the new password with its owner through a private channel.</p></div>
+      <p id="account-self-note" class="small muted" hidden>Use Password in the navigation to change your own password. Your account cannot be blocked or deleted here.</p>
+      <button type="submit" class="primary wide">Save account</button>
+    </form>
+  </section>
+  <section id="account-delete-dialog" aria-labelledby="account-delete-title" class="panel" hidden><form id="account-delete-form">
+    <div class="dialog-heading"><h2 id="account-delete-title">Delete account?</h2><button type="button" class="quiet close-dialog" aria-label="Close">Back</button></div>
+    <p id="account-delete-name"></p><p class="muted">First remove this account’s devices and transfer its subordinate users to another administrator. Deletion signs out all remaining sessions and cannot be undone.</p>
+    <label class="confirmation"><input type="checkbox" id="account-delete-confirm" required> Confirm account deletion</label><button type="submit" class="danger wide">Delete account</button>
+  </form></section>
+  <section id="audit-dialog" aria-labelledby="audit-title" class="panel" hidden><div class="dialog-heading"><h2 id="audit-title">Activity log</h2><button class="quiet close-dialog" aria-label="Close log">Back</button></div><p class="muted">Latest 100 committed account and device changes. Passwords and keys are never included. Dates use your local time zone.</p><div id="audit-list"></div></section>
+
+  <section id="security-dialog" aria-labelledby="security-title" class="panel" hidden>
+    <div class="dialog-heading"><h2 id="security-title">Two-factor authentication</h2><button type="button" class="quiet close-dialog" aria-label="Close security">Back</button></div>
+    <p id="totp-status" class="muted"></p>
+    <form id="totp-start-form"><label for="totp-start-password">Current password</label><input id="totp-start-password" type="password" autocomplete="current-password" maxlength="256" required><button class="primary wide" type="submit">Set up authenticator</button></form>
+    <form id="totp-manage-form" hidden>
+      <p class="muted">Replacing recovery codes invalidates the previous set. Disabling two-factor removes the authenticator and all recovery codes. Either action signs out your other sessions.</p>
+      <label for="totp-password">Current password</label><input id="totp-password" type="password" autocomplete="current-password" maxlength="256" required>
+      <label for="totp-code">Fresh authenticator or recovery code</label><input id="totp-code" autocomplete="one-time-code" maxlength="64" required spellcheck="false">
+      <label class="confirmation"><input id="totp-manage-confirm" type="checkbox" required> I understand the effect of this security change.</label>
+      <div class="actions"><button type="submit" value="replace" class="primary">Replace recovery codes</button><button type="submit" value="disable" class="danger">Disable two-factor</button></div>
+    </form>
+    <hr><p class="small muted">Recovery codes can replace your authenticator when signing in or changing security settings. If you lose all codes, ask your administrator to reset your second factor.</p>
+    <button id="sessions-revoke" class="quiet">Sign out all my sessions</button>
+  </section>
+  <section id="totp-setup-dialog" aria-labelledby="totp-setup-title" class="panel" hidden><form id="totp-confirm-form">
+    <div class="dialog-heading"><h2 id="totp-setup-title">Connect an authenticator</h2><button type="button" class="quiet close-dialog" aria-label="Close authenticator setup">Back</button></div>
+    <p class="muted">Scan this QR in your authenticator app, then enter its current code. Setup expires in 5 minutes. Two-factor stays off until you confirm.</p>
+    <img id="totp-qr" width="320" height="320" alt="Authenticator setup QR">
+    <label for="totp-secret">Manual setup key</label><input id="totp-secret" class="mono" readonly autocomplete="off" spellcheck="false">
+    <label for="totp-confirm-code">6-digit authenticator code</label><input id="totp-confirm-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+    <p class="small muted">Keep the setup key private. Your app should use 6 digits and a 30-second period.</p><button type="submit" class="primary wide">Enable two-factor</button>
+  </form></section>
+  <section id="recovery-dialog" aria-labelledby="recovery-title" class="panel" hidden>
+    <div class="dialog-heading"><h2 id="recovery-title">Save your recovery codes</h2><button type="button" class="quiet close-dialog" aria-label="Close recovery codes">Back</button></div>
+    <p class="muted">Shown once, for up to 5 minutes. Save these somewhere private before closing. Each code works once, together with your password.</p>
+    <label for="recovery-codes">Recovery codes</label><textarea id="recovery-codes" readonly rows="10" spellcheck="false"></textarea>
+    <div class="actions"><button id="recovery-download" class="primary">Download codes</button><button id="recovery-done" class="quiet">Done</button></div>
+  </section>
+  <section id="admin-totp-dialog" aria-labelledby="admin-totp-title" class="panel" hidden><form id="admin-totp-form">
+    <div class="dialog-heading"><h2 id="admin-totp-title">Reset second factor?</h2><button type="button" class="quiet close-dialog" aria-label="Close reset">Back</button></div>
+    <p id="admin-totp-target"></p><p class="muted">This removes the account’s authenticator and recovery codes, and signs out all its sessions. Its password and VPN profiles stay the same. The owner must enroll an authenticator again.</p>
+    <label for="admin-totp-password">Your current password</label><input id="admin-totp-password" type="password" autocomplete="current-password" required maxlength="256">
+    <div id="admin-totp-code-field"><label for="admin-totp-code">Your authenticator or recovery code</label><input id="admin-totp-code" autocomplete="one-time-code" maxlength="64" spellcheck="false"></div>
+    <label class="confirmation"><input id="admin-totp-confirm" type="checkbox" required> Confirm removal of this account’s second factor</label><button type="submit" class="danger wide">Reset second factor</button>
+  </form></section>
+  </main>
+  </div>
+</body>
+</html>
