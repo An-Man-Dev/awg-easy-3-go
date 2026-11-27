@@ -1,8 +1,7 @@
 package store
 
-// Schema 9 is the clean alpha baseline (owner-authorized reset on 2026-11-22). Future schema changes require explicit,
-// versioned migrations that preserve existing data. Reject unsupported versions;
-// never silently replace a database. Pre-alpha schemas are not supported.
+// Schema 9 is a pre-alpha schema. Reject unsupported versions without resetting data.
+// The first release will establish the baseline for versioned migrations.
 const schemaVersion = 9
 const applicationID = 0x41574750 // AWGP
 

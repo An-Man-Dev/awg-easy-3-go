@@ -36,28 +36,10 @@ func (s *Store) ConfigureMFAKey(path string) error {
 		if _, err = rand.Read(key); err != nil {
 			return err
 		}
-		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
-		if err != nil {
-			return fmt.Errorf("cannot create TOTP encryption key")
-		}
-		if _, err = f.Write(key); err == nil {
-			err = f.Sync()
-		}
-		closeErr := f.Close()
-		if err == nil {
-			err = closeErr
-		}
+		err = AtomicCreate(path, key, 0600)
+		clear(key)
 		if err != nil {
 			return fmt.Errorf("cannot persist TOTP encryption key")
-		}
-		dir, e := os.Open(filepath.Dir(path))
-		if e != nil {
-			return e
-		}
-		err = dir.Sync()
-		dir.Close()
-		if err != nil {
-			return err
 		}
 		f, err = os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	}

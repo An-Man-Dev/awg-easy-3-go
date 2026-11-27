@@ -48,7 +48,7 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		return
 	}
 	if path != "/api/transfer/export" && (model.IsVPN(peerIP(r)) || model.IsVPN(a.requestIP(r))) {
-		problem(w, 400, "Open the external panel address to import: the initial VPN device will be replaced")
+		problem(w, 400, "Open the external panel address to import: VPN devices and server identity may be replaced")
 		return
 	}
 	if !a.allowed(a.requestIP(r).String()) {
@@ -126,7 +126,7 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		return
 	}
 	if path == "/api/transfer/preview" {
-		fingerprint, err := a.service.CheckImport(snapshot)
+		current, fingerprint, err := a.service.PreviewImport(snapshot)
 		if err != nil {
 			problem(w, 409, err.Error())
 			return
@@ -140,7 +140,7 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		}
 		a.transfers[cookie.Value] = ticket
 		a.mu.Unlock()
-		jsonReply(w, 200, map[string]any{"summary": snapshot.Summary(), "ticket": ticket.Token, "expiresIn": 300})
+		jsonReply(w, 200, map[string]any{"summary": snapshot.Summary(), "current": current.Summary(), "currentInventory": importInventory(current), "incomingInventory": importInventory(snapshot), "ticket": ticket.Token, "expiresIn": 300})
 		return
 	}
 	if err = a.service.ImportArchive(r.Context(), snapshot, ticket.Fingerprint); err != nil {
@@ -158,4 +158,17 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 	a.mu.Unlock()
 	a.cookie(w, r, "", -1)
 	jsonReply(w, 200, map[string]any{"ok": true, "panelOrigin": a.config.PublicOrigin, "login": snapshot.Summary().SuperadminLogin})
+}
+
+// Only names and identifiers reach the preview; never serialize the snapshot.
+func importInventory(s portable.Snapshot) map[string]any {
+	accounts := make([]map[string]string, 0, len(s.Accounts))
+	devices := make([]map[string]string, 0, len(s.State.Peers))
+	for _, a := range s.Accounts {
+		accounts = append(accounts, map[string]string{"id": a.ID, "login": a.Login, "role": a.Role})
+	}
+	for _, p := range s.State.Peers {
+		devices = append(devices, map[string]string{"id": p.ID, "name": p.Name, "ownerId": p.OwnerID})
+	}
+	return map[string]any{"accounts": accounts, "devices": devices}
 }

@@ -94,7 +94,7 @@ prompt AWG_PORT 'VPN UDP Port' '51820'
 prompt AWG_PANEL_PORT 'Admin Panel Port' '8881'
 if [[ ! -v AWG_EXTERNAL_PANEL_BIND ]]; then
   answer=n
-  if [[ -t 0 ]]; then read -r -p 'Enable external panel bind for Caddy/reverse-proxy? [y/N]: ' answer; fi
+  if [[ -t 0 ]]; then read -r -p 'Enable external panel bind for your reverse proxy? [y/N]: ' answer; fi
   case "$answer" in
     y|Y|yes|YES) AWG_EXTERNAL_PANEL_BIND="0.0.0.0:$AWG_PANEL_PORT"; prompt AWG_EXTERNAL_PANEL_PUBLISH 'Host bind address and port' "127.0.0.1:$AWG_PANEL_PORT"; prompt AWG_PUBLIC_ORIGIN 'Public HTTPS origin (optional)' '' ;;
     n|N|no|NO|'') AWG_EXTERNAL_PANEL_BIND='' ;;
@@ -294,7 +294,7 @@ if [[ "$IPV6_ENABLED" == true ]]; then printf 'Internal IPv6 panel: http://[fd42
 if [[ -n "$AWG_EXTERNAL_PANEL_BIND" ]]; then
   printf 'Host reverse-proxy upstream: %s\n' "$AWG_EXTERNAL_PANEL_PUBLISH"
   proxy_site="${AWG_PUBLIC_ORIGIN#https://}"; proxy_site="${proxy_site:-$AWG_HOST}"
-  printf '\nCaddy configuration (set AWG_PUBLIC_ORIGIN to its HTTPS origin):\n%s {\n    header Strict-Transport-Security "max-age=31536000"\n    reverse_proxy %s\n}\n' "$proxy_site" "$AWG_EXTERNAL_PANEL_PUBLISH"
+  printf '\nOptional Caddy example (configure your proxy separately; set AWG_PUBLIC_ORIGIN to its HTTPS origin):\n%s {\n    header Strict-Transport-Security "max-age=31536000"\n    reverse_proxy %s\n}\n' "$proxy_site" "$AWG_EXTERNAL_PANEL_PUBLISH"
 fi
 if [[ "$UPDATE" == false ]]; then
   say 'To explicitly export the first home-device configuration (contains private keys), run:'

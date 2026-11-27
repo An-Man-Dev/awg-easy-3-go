@@ -7,6 +7,15 @@ import (
 
 // AtomicWrite also syncs the parent directory to persist the rename across power loss.
 func AtomicWrite(path string, b []byte, mode os.FileMode) error {
+	return atomicWrite(path, b, mode, false)
+}
+
+// AtomicCreate publishes a fully synced file without replacing an existing path.
+func AtomicCreate(path string, b []byte, mode os.FileMode) error {
+	return atomicWrite(path, b, mode, true)
+}
+
+func atomicWrite(path string, b []byte, mode os.FileMode, exclusive bool) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".pending-*")
 	if err != nil {
@@ -29,7 +38,12 @@ func AtomicWrite(path string, b []byte, mode os.FileMode) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(name, path); err != nil {
+	if exclusive {
+		err = os.Link(name, path)
+	} else {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
 		return err
 	}
 	d, err := os.Open(dir)

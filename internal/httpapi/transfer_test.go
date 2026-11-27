@@ -65,8 +65,22 @@ func TestTransferAuthorizationAndPreviewBinding(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatal("preview", w.Code, w.Body.String())
 		}
-		var p struct{ Ticket string }
+		var p struct {
+			Ticket           string
+			Current          portable.Summary
+			CurrentInventory struct {
+				Accounts []map[string]string
+				Devices  []map[string]string
+			}
+			IncomingInventory struct {
+				Accounts []map[string]string
+				Devices  []map[string]string
+			}
+		}
 		json.Unmarshal(w.Body.Bytes(), &p)
+		if p.Current.Accounts == 0 || len(p.CurrentInventory.Accounts) == 0 || len(p.IncomingInventory.Devices) == 0 {
+			t.Fatal("replacement inventory missing")
+		}
 		if bytes.Contains(w.Body.Bytes(), []byte(snap.State.PrivateKey)) {
 			t.Fatal("secret in preview")
 		}
@@ -109,3 +123,24 @@ func TestTransferAuthorizationAndPreviewBinding(t *testing.T) {
 		t.Fatal("recovery replay", w.Code)
 	}
 }
+
+func TestTransferBusyBeforeBodyRead(t *testing.T) {
+	a := testAPI(t, true)
+	a.transferGate <- struct{}{}
+	defer func() { <-a.transferGate }()
+	r := httptest.NewRequest("POST", "http://localhost:8881/api/transfer/preview", nil)
+	r.Body = unreadableTransferBody{t}
+	w := httptest.NewRecorder()
+	a.ServeHTTP(w, r)
+	if w.Code != 429 || w.Header().Get("Retry-After") == "" {
+		t.Fatal("missing bounded transfer admission", w.Code)
+	}
+}
+
+type unreadableTransferBody struct{ t *testing.T }
+
+func (b unreadableTransferBody) Read([]byte) (int, error) {
+	b.t.Fatal("busy transfer read body")
+	return 0, nil
+}
+func (b unreadableTransferBody) Close() error { return nil }

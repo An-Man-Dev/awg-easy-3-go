@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="dark light">
   <title>AWG Panel</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=account-compact-20261122">
-  <script src="/app.js?v=account-compact-20261122" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=full-import-20261127">
+  <script src="/app.js?v=full-import-20261127" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -72,7 +72,7 @@
 
   <section id="transfer-dialog" aria-labelledby="transfer-title" class="panel" hidden>
     <div class="dialog-heading"><h2 id="transfer-title">Move server</h2><button type="button" class="quiet close-dialog" aria-label="Close transfer">Back</button></div>
-    <p class="muted">Transfer accounts, passwords, two-factor authentication, devices and application settings to a fresh installation. Activity history and sessions are excluded. Configure DNS, Caddy and the host separately.</p>
+    <p class="muted">Transfer accounts, passwords, two-factor authentication, devices and application settings to a new or existing installation. Activity history and sessions are excluded. Configure DNS, Caddy and the host separately.</p>
     <p class="small muted">Keep the same VPN hostname and UDP port to reuse installed profiles. Account for DNS TTL; clients may need a tunnel restart to resolve the new IP. Profiles using a literal IP need an endpoint update. Active connections will be interrupted.</p>
     <p id="transfer-requirements" class="small muted"></p>
     <form id="transfer-export-form">
@@ -88,10 +88,10 @@
         <button type="submit" class="primary">Download encrypted archive</button>
       </fieldset>
     </form>
-    <p id="transfer-unavailable" class="muted" hidden>Import requires a fresh installation before creating accounts or changing devices. Export is still available.</p>
+    <p id="transfer-unavailable" class="muted" hidden>Import is currently unavailable. Restore server health before trying again.</p>
     <form id="transfer-import-form">
-      <fieldset><legend>Import to this fresh installation</legend>
-        <p class="muted">Open the external panel address. Import replaces the initial account and VPN profile. Use the source server's login and second factor afterwards. Both servers must use matching VPN and panel ports and IPv6 mode.</p>
+      <fieldset><legend>Replace this installation</legend>
+        <p class="muted">Open the external panel address. Import replaces all accounts, devices, application settings and server keys. Objects absent from the archive are deleted; existing passwords and two-factor credentials are replaced. All sessions and activity history are cleared. Use the source server's login and second factor afterwards. Both servers must use matching VPN and panel ports and IPv6 mode.</p>
         <label for="transfer-file">Encrypted archive (up to 8 MiB)</label><input id="transfer-file" type="file" accept=".awgbackup" required>
         <label for="transfer-import-secret">Archive password or key</label><input id="transfer-import-secret" type="password" required maxlength="256" autocomplete="off" spellcheck="false">
         <label for="transfer-import-password">Current account password on this server</label><input id="transfer-import-password" type="password" required maxlength="256" autocomplete="current-password">

@@ -41,20 +41,21 @@ type bucket struct {
 	Last   time.Time
 }
 type API struct {
-	transfers   map[string]importTicket
-	challenges  map[string]loginChallenge
-	enrollments map[string]enrollment
-	dummyHash   string
-	configMu    sync.RWMutex
-	service     *service.Service
-	config      config.Config
-	root        *os.Root
-	mu          sync.Mutex
-	sessions    map[string]session
-	limits      map[string]bucket
-	global      bucket
-	loginGate   chan struct{}
-	origins     map[string]bool
+	transfers    map[string]importTicket
+	challenges   map[string]loginChallenge
+	enrollments  map[string]enrollment
+	dummyHash    string
+	configMu     sync.RWMutex
+	service      *service.Service
+	config       config.Config
+	root         *os.Root
+	mu           sync.Mutex
+	sessions     map[string]session
+	limits       map[string]bucket
+	global       bucket
+	loginGate    chan struct{}
+	transferGate chan struct{}
+	origins      map[string]bool
 }
 
 func New(s *service.Service) (*API, error) {
@@ -62,7 +63,7 @@ func New(s *service.Service) (*API, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &API{transfers: map[string]importTicket{}, service: s, config: s.Config, root: r, sessions: map[string]session{}, challenges: map[string]loginChallenge{}, enrollments: map[string]enrollment{}, limits: map[string]bucket{}, loginGate: make(chan struct{}, 1), origins: map[string]bool{}}
+	a := &API{transfers: map[string]importTicket{}, service: s, config: s.Config, root: r, sessions: map[string]session{}, challenges: map[string]loginChallenge{}, enrollments: map[string]enrollment{}, limits: map[string]bucket{}, loginGate: make(chan struct{}, 1), transferGate: make(chan struct{}, 1), origins: map[string]bool{}}
 	a.config.Password = ""
 	if s.Store == nil {
 		r.Close()
@@ -184,6 +185,18 @@ func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) boo
 	return true
 }
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/transfer/") && r.Method == "POST" {
+		// Bound archive buffers and cryptographic work before reading the request body.
+		select {
+		case a.transferGate <- struct{}{}:
+			defer func() { <-a.transferGate }()
+		default:
+			w.Header().Set("Retry-After", "5")
+			problem(w, 429, "Configuration transfer is busy; try again shortly")
+			return
+		}
+
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/transfer") || (strings.HasPrefix(r.URL.Path, "/api/account/") && r.Method != "GET" && r.Method != "HEAD") || (r.URL.Path == "/api/addresses" && r.Method == "PUT") || ((r.URL.Path == "/api/accounts" || strings.HasPrefix(r.URL.Path, "/api/accounts/")) && r.Method != "GET" && r.Method != "HEAD") {
 		a.configMu.Lock()
 		defer a.configMu.Unlock()

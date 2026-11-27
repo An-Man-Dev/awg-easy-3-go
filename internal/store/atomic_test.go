@@ -57,3 +57,25 @@ func TestAtomicReadersNeverObservePartialJSON(t *testing.T) {
 		t.Fatal("temporary files leaked")
 	}
 }
+
+func TestAtomicCreatePreservesExistingKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "totp.key")
+	if err := AtomicCreate(path, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicCreate(path, []byte("replacement"), 0600); !os.IsExist(err) {
+		t.Fatalf("expected existing file error, got %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "original" {
+		t.Fatal("existing key changed")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("key permissions changed")
+	}
+	pending, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".pending-*"))
+	if len(pending) != 0 {
+		t.Fatal("temporary files leaked")
+	}
+}

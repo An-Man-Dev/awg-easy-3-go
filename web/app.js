@@ -743,13 +743,27 @@ $('transfer-import-form').addEventListener('submit', event => {
     $('transfer-import-password').value = ''; $('transfer-import-code').value = '';
     if (sequence !== transferSequence || !csrf) return;
     transferPending = {archive, ticket:result.ticket};
-    const s = result.summary;
-    const lines = [s.serverName, `Created: ${new Date(s.createdAt).toLocaleString()}`, `VPN: ${s.vpnHost}`,
+    const s = result.summary, current = result.current;
+    const lines = [`Current server: ${current.serverName} · Accounts: ${current.accounts} · Devices: ${current.devices} · Saved client keys: ${current.storedKeys}`,
+      `Current addresses: VPN ${current.vpnHost} · Panel ${current.panelOrigin || "VPN access only"}`,
+      "Full replacement: settings, server keys, passwords, TOTP and recovery codes come from the archive. Existing saved client keys are removed even if the archive excludes them.",
+      "All current VPN connections may be interrupted. Existing profiles work afterwards only if server and device keys, addresses and AWG parameters remain compatible. Sessions and activity history are cleared.",
+      `Incoming server: ${s.serverName}`, `Created: ${new Date(s.createdAt).toLocaleString()}`, `VPN: ${s.vpnHost}`,
       `Panel: ${s.panelOrigin || 'VPN access only'}`, `Superadministrator: ${s.superadminLogin}`,
       `Accounts: ${s.accounts} · Devices: ${s.devices} · TOTP accounts: ${s.totpAccounts}`,
       `Saved client private keys: ${s.storedKeys} (${s.clientKeysIncluded ? 'included when available' : 'excluded'})`,
       `Storage for new client keys: ${s.retainKeys ? 'enabled' : 'disabled'}`];
     $('transfer-summary').replaceChildren(...lines.map(line => textElement('p', line)));
+    for (const [title, inventory] of [['Current objects — replaced or removed', result.currentInventory], ['Archive objects — final configuration', result.incomingInventory]]) {
+      const details = document.createElement('details');
+      details.append(textElement('summary', title));
+      for (const a of inventory.accounts) details.append(textElement('p', `${a.login} · ${a.role} · ${a.id}`, 'small'));
+      for (const d of inventory.devices) {
+        const owner = inventory.accounts.find(a => a.id === d.ownerId);
+        details.append(textElement('p', `${d.name} · ${owner?.login || d.ownerId} · ${d.id}`, 'small'));
+      }
+      $('transfer-summary').append(details);
+    }
     $('transfer-confirm-form').hidden = false;
     transferTimer = setTimeout(() => { clearTransferSecrets(); notify('Import preview expired. Select the file and preview again.'); }, result.expiresIn * 1000);
     $('transfer-summary').scrollIntoView({block:'nearest'});

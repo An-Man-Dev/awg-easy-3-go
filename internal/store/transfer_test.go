@@ -5,6 +5,8 @@ import (
 	"awg-panel/internal/portable"
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -65,8 +67,8 @@ func TestTransferPreservesIdentityAndMFA(t *testing.T) {
 			if got.KeyPolicy.Retain || got.Peers[0].PublicKey != snap.State.Peers[0].PublicKey || (got.Peers[0].PrivateKey != "") != include {
 				t.Fatal("keys or policy lost")
 			}
-			if dest.ImportAvailable() {
-				t.Fatal("repeat import allowed")
+			if !dest.ImportAvailable() {
+				t.Fatal("repeat import unavailable")
 			}
 			root, err := dest.Account(account.ID)
 			if root.Note != "Portable private note" {
@@ -123,8 +125,8 @@ func TestTransferRollbackAndStalePreview(t *testing.T) {
 	if err = dest.Save(state); err != nil {
 		t.Fatal(err)
 	}
-	if dest.ImportAvailable() {
-		t.Fatal("device changes did not disable import")
+	if !dest.ImportAvailable() {
+		t.Fatal("used installation cannot be imported")
 	}
 }
 
@@ -145,5 +147,104 @@ func TestTransferWriteFailureLeavesInitialState(t *testing.T) {
 	after, err := dest.ImportFingerprint()
 	if err != nil || after != fingerprint {
 		t.Fatal("partial state persisted", err)
+	}
+}
+
+func TestReplacePopulatedInstallationAndRollback(t *testing.T) {
+	source := initialized(t)
+	incoming := transferSnapshot(t, source)
+	dest := initialized(t)
+	admin, err := dest.WriteAccount(model.BootstrapAccountID, Account{Login: "oldmanager", Role: "admin", Enabled: true}, testPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := dest.WriteAccount(admin.ID, Account{Login: "olduser", Role: "user", ManagerID: admin.ID, Enabled: true}, testPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := dest.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := model.NewPeer("Old device", "guest", 3, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Peers = append(state.Peers, peer)
+	if err = dest.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	before, err := dest.ImportFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("apply failed")
+	if _, err = dest.Import(context.Background(), incoming, before, func(model.State) error { return failure }); !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	after, err := dest.ImportFingerprint()
+	if err != nil || after != before {
+		t.Fatal("populated destination lost on rollback", err)
+	}
+	got, err := dest.Import(context.Background(), incoming, before, func(model.State) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Peers) != len(incoming.State.Peers) || got.PublicKey != incoming.State.PublicKey {
+		t.Fatal("replacement incomplete")
+	}
+	for _, id := range []string{admin.ID, user.ID} {
+		if _, err := dest.Account(id); err == nil {
+			t.Fatal("old account survived")
+		}
+	}
+	if _, err = dest.Import(context.Background(), incoming, before, func(model.State) error { t.Fatal("stale preview applied"); return nil }); !errors.Is(err, ErrSettingsConflict) {
+		t.Fatal("stale replacement accepted", err)
+	}
+}
+
+func TestImportCrashBeforeCommitRestoresDestination(t *testing.T) {
+	if dir := os.Getenv("AWG_IMPORT_CRASH_DIR"); dir != "" {
+		dest, err := Open(dir)
+		if err != nil {
+			os.Exit(2)
+		}
+		incoming := transferSnapshot(t, dest)
+		incoming.State.Settings.ServerName = "Interrupted import"
+		fingerprint, err := dest.ImportFingerprint()
+		if err != nil {
+			os.Exit(3)
+		}
+		_, _ = dest.Import(context.Background(), incoming, fingerprint, func(model.State) error { os.Exit(42); return nil })
+		os.Exit(4)
+	}
+	dir := t.TempDir()
+	dest, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = dest.Initialize(testPassword, false, model.Addresses{Revision: 1, VPNHost: "192.0.2.1"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := dest.ImportFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest.Close()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestImportCrashBeforeCommitRestoresDestination$")
+	cmd.Env = append(os.Environ(), "AWG_IMPORT_CRASH_DIR="+dir)
+	if err = cmd.Run(); err == nil {
+		t.Fatal("child did not stop")
+	} else if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 42 {
+		t.Fatal("crash fixture failed", err)
+	}
+	dest, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dest.Close()
+	after, err := dest.ImportFingerprint()
+	if err != nil || before != after {
+		t.Fatal("interrupted import changed destination", err)
 	}
 }

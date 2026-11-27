@@ -89,8 +89,14 @@ def check_transfer(base, password, run, compose, container, image, server_ip,
             target.headers['Origin'] = 'http://127.0.0.1:18881'
             target.login('admin', password)
             assert target.api('/transfer')['importAvailable']
+            # Populate the destination with conflicting logins and a device.
+            old_manager = target.api('/accounts', 'POST', dict(login='manager', role='admin', enabled=True, password=password), expected=201)
+            old_user = target.api('/accounts', 'POST', dict(login='member', role='user', managerId=old_manager['id'], enabled=True, password=password), expected=201)
+            old_device = target.api('/peers', 'POST', dict(ownerId=old_user['id'], name='Replaced device', group='guest'), expected=201)
             body = dict(archive=archive, secret=secret, currentPassword=password)
             preview = target.api('/transfer/preview', 'POST', body)
+            assert preview['current']['accounts'] == 3 and preview['current']['devices'] == 2
+            assert old_device['id'] in [d['id'] for d in preview['currentInventory']['devices']]
             summary = preview['summary']
             assert summary['accounts'] == 3 and summary['devices'] == 2
             assert summary['storedKeys'] == (2 if include else 0) and summary['totpAccounts'] == 1
@@ -104,7 +110,7 @@ def check_transfer(base, password, run, compose, container, image, server_ip,
             target.api('/login', 'POST', dict(login='admin', password=password))
             target.api('/login/verify', 'POST', {'code': codes[0]}, expected=401)
             target.csrf = target.api('/login/verify', 'POST', {'code': codes[2]})['csrf']
-            assert not target.api('/transfer')['importAvailable']
+            assert target.api('/transfer')['importAvailable']
             assert [(a['id'], a['login'], a['role'], a['managerId'], a['enabled']) for a in target.api('/accounts')] == [
                 (a['id'], a['login'], a['role'], a['managerId'], a['enabled']) for a in original_accounts]
             peers = {p['id']: p for p in target.api('/peers')}
@@ -116,12 +122,17 @@ def check_transfer(base, password, run, compose, container, image, server_ip,
             target_ip = json.loads(run('docker', 'inspect', name).stdout)[0]['NetworkSettings']['Networks'][project + '_vpn']['IPAddress']
             moved = peer_container(home, target_ip, conf=profile, tag='-moved-' + str(include))
             connected(moved)
-            run('docker', 'restart', name)
+            # Abrupt process loss after committed replacement must preserve imported state.
+            run('docker', 'kill', '--signal', 'KILL', name)
+            run('docker', 'start', name)
             for _ in range(60):
                 if run('docker', 'exec', name, './awg-panel', '--healthcheck', check=False).returncode == 0:
                     break
                 time.sleep(.5)
             connected(moved)
+            print('RESOURCE:', run('docker', 'stats', '--no-stream', '--format', '{{.MemUsage}}', name).stdout.strip(), flush=True)
+            events = run('docker', 'exec', name, 'cat', '/sys/fs/cgroup/memory.events').stdout
+            assert 'oom_kill 0' in events, 'OOM during transfer'
             run('docker', 'stop', moved)
             print('PASS: encrypted migration, accounts/MFA, key inclusion=' + str(include) + ', original VPN profile and restart', flush=True)
         finally:

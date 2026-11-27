@@ -14,29 +14,11 @@ import (
 	"time"
 )
 
-var ErrImportUsed = errors.New("import requires a fresh installation with no account or device changes")
 var ErrImportCommit = errors.New("import commit status is uncertain; service must restart")
 
-func fresh(ctx context.Context, tx *sql.Tx) error {
-	var available bool
-	var accounts, devices int
-	if err := tx.QueryRowContext(ctx, `SELECT import_available,(SELECT count(*) FROM accounts),(SELECT count(*) FROM devices) FROM metadata WHERE id=1`).Scan(&available, &accounts, &devices); err != nil {
-		return err
-	}
-	if !available || accounts != 1 || devices != 1 {
-		return ErrImportUsed
-	}
-	return nil
-}
 func (s *Store) ImportAvailable() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false
-	}
-	defer tx.Rollback()
-	return fresh(ctx, tx) == nil
+	initialized, err := s.Initialized()
+	return err == nil && initialized
 }
 func (s *Store) snapshot(ctx context.Context, tx *sql.Tx) (portable.Snapshot, error) {
 	out := portable.Snapshot{Version: 1, CreatedAt: time.Now().UTC(), ClientKeysIncluded: true, Accounts: []portable.Account{}}
@@ -123,21 +105,15 @@ func snapshotHash(s portable.Snapshot) string {
 	return hex.EncodeToString(sum[:])
 }
 func (s *Store) ImportFingerprint() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	tx, err := s.db.BeginTx(ctx, nil)
+	_, fingerprint, err := s.ImportPreview()
+	return fingerprint, err
+}
+func (s *Store) ImportPreview() (portable.Snapshot, string, error) {
+	out, err := s.Snapshot()
 	if err != nil {
-		return "", err
+		return out, "", err
 	}
-	defer tx.Rollback()
-	if err = fresh(ctx, tx); err != nil {
-		return "", err
-	}
-	out, err := s.snapshot(ctx, tx)
-	if err != nil {
-		return "", err
-	}
-	return snapshotHash(out), tx.Commit()
+	return out, snapshotHash(out), nil
 }
 
 // Apply runs while SQLite still owns its transaction. On application failure the
@@ -154,9 +130,6 @@ func (s *Store) Import(ctx context.Context, in portable.Snapshot, expected strin
 		return model.State{}, err
 	}
 	defer tx.Rollback()
-	if err = fresh(ctx, tx); err != nil {
-		return model.State{}, err
-	}
 	before, err := s.snapshot(ctx, tx)
 	if err != nil {
 		return model.State{}, err
@@ -164,7 +137,7 @@ func (s *Store) Import(ctx context.Context, in portable.Snapshot, expected strin
 	if snapshotHash(before) != expected {
 		return model.State{}, ErrSettingsConflict
 	}
-	for _, query := range []string{"DELETE FROM devices", "DELETE FROM account_totp", "DELETE FROM mfa_attempts", "DELETE FROM device_observations", "DELETE FROM audit", "UPDATE key_policy SET retain=1 WHERE id=1"} {
+	for _, query := range []string{"DELETE FROM devices", "DELETE FROM account_totp", "DELETE FROM mfa_attempts", "DELETE FROM device_observations", "DELETE FROM audit", "DELETE FROM accounts WHERE role='user'", "DELETE FROM accounts WHERE role='admin'", "UPDATE key_policy SET retain=1 WHERE id=1"} {
 		if _, err = tx.ExecContext(ctx, query); err != nil {
 			return model.State{}, err
 		}

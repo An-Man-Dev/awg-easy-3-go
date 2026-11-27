@@ -33,18 +33,22 @@ func (s *Service) ExportArchive(include bool, mode, secret string) ([]byte, erro
 	return portable.Encrypt(snap, mode, secret)
 }
 func (s *Service) CheckImport(in portable.Snapshot) (string, error) {
+	_, fingerprint, err := s.PreviewImport(in)
+	return fingerprint, err
+}
+func (s *Service) PreviewImport(in portable.Snapshot) (portable.Snapshot, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed {
-		return "", fmt.Errorf("service is stopping")
+		return portable.Snapshot{}, "", fmt.Errorf("service is stopping")
 	}
 	if err := in.Validate(); err != nil {
-		return "", err
+		return portable.Snapshot{}, "", err
 	}
 	if in.Requirements != s.requirements() {
-		return "", fmt.Errorf("protocol, UDP/panel ports, VPN subnets and effective IPv6 must match this server")
+		return portable.Snapshot{}, "", fmt.Errorf("protocol, UDP/panel ports, VPN subnets and effective IPv6 must match this server")
 	}
-	return s.Store.ImportFingerprint()
+	return s.Store.ImportPreview()
 }
 func (s *Service) ImportArchive(ctx context.Context, in portable.Snapshot, fingerprint string) error {
 	s.mu.Lock()
@@ -82,7 +86,7 @@ func (s *Service) ImportArchive(ctx context.Context, in portable.Snapshot, finge
 				s.fail(e)
 				return fmt.Errorf("import failed; service is restarting with the previous database")
 			}
-			return fmt.Errorf("network apply failed; initial database and network restored")
+			return fmt.Errorf("network apply failed; previous database and network restored")
 		}
 		return err
 	}
