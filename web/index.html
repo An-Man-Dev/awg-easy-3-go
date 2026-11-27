@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="dark light">
   <title>AWG Panel</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=full-import-20261127">
-  <script src="/app.js?v=full-import-20261127" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=selected-import-20261127">
+  <script src="/app.js?v=selected-import-20261127" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -90,8 +90,9 @@
     </form>
     <p id="transfer-unavailable" class="muted" hidden>Import is currently unavailable. Restore server health before trying again.</p>
     <form id="transfer-import-form">
-      <fieldset><legend>Replace this installation</legend>
-        <p class="muted">Open the external panel address. Import replaces all accounts, devices, application settings and server keys. Objects absent from the archive are deleted; existing passwords and two-factor credentials are replaced. All sessions and activity history are cleared. Use the source server's login and second factor afterwards. Both servers must use matching VPN and panel ports and IPv6 mode.</p>
+      <fieldset><legend>Import configuration</legend>
+        <label for="transfer-import-mode">Import mode</label><select id="transfer-import-mode"><option value="full">Replace everything</option><option value="selected">Import selected data</option></select>
+        <p id="transfer-import-description" class="muted">Open the external panel address. Import replaces all accounts, devices, application settings and server keys. Objects absent from the archive are deleted; existing passwords and two-factor credentials are replaced. All sessions and activity history are cleared. Use the source server's login and second factor afterwards. Both servers must use matching VPN and panel ports and IPv6 mode.</p>
         <label for="transfer-file">Encrypted archive (up to 8 MiB)</label><input id="transfer-file" type="file" accept=".awgbackup" required>
         <label for="transfer-import-secret">Archive password or key</label><input id="transfer-import-secret" type="password" required maxlength="256" autocomplete="off" spellcheck="false">
         <label for="transfer-import-password">Current account password on this server</label><input id="transfer-import-password" type="password" required maxlength="256" autocomplete="current-password">
@@ -99,10 +100,21 @@
         <button type="submit" class="primary">Preview import</button>
       </fieldset>
     </form>
+    <form id="transfer-selection-form" hidden>
+      <h3>Select data to import</h3>
+      <p class="small muted">Unselected data stays unchanged. Select or map device owners and managing administrators. Same-role account mapping keeps the target account unchanged. VPN address slots range from 2 to 254.</p>
+      <div id="transfer-selection-settings" class="actions"></div>
+      <details><summary>Accounts</summary><div id="transfer-selection-accounts"></div></details>
+      <details><summary>Devices</summary><div id="transfer-selection-devices"></div></details>
+      <label class="confirmation"><input id="transfer-selection-keys" type="checkbox"> Import available private keys for selected devices</label>
+      <label class="confirmation"><input id="transfer-selection-drop" type="checkbox"> Allow discarding an existing private key when replacing its device with a different public key and no matching private key</label>
+      <label class="confirmation"><input id="transfer-selection-disruption" type="checkbox" required> I understand selected changes may interrupt VPN connections, change credentials and sign out all web sessions.</label>
+      <button type="submit" class="primary">Preview selected changes</button>
+    </form>
     <form id="transfer-confirm-form" hidden>
       <h3>Review import</h3><div id="transfer-summary"></div>
       <p class="muted">Preview expires after 5 minutes. Prepare the new server and its external access before switching DNS. Shut down the old VPN server when switching over.</p>
-      <label class="confirmation"><input id="transfer-confirm" type="checkbox" required> Replace this installation with the configuration above and sign out all sessions.</label>
+      <label class="confirmation"><input id="transfer-confirm" type="checkbox" required> <span id="transfer-confirm-label">Replace this installation with the configuration above and sign out all sessions.</span></label>
       <button type="submit" class="danger">Import configuration</button>
     </form>
   </section>

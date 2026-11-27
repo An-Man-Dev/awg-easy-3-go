@@ -676,15 +676,23 @@ $('admin-totp-form').addEventListener('submit', event => {
 });
 
 
-let transferPending = null, transferTimer = null, transferSequence = 0;
+let transferPending = null, transferTimer = null, transferSequence = 0, transferInspection = null;
+let accountChoices = [], deviceChoices = [];
+const fullImportDescription = $('transfer-import-description').textContent;
+function updateImportMode() {
+ $('transfer-import-description').textContent = $('transfer-import-mode').value === 'selected'
+  ? 'Import only selected settings, accounts and devices. Unselected data stays unchanged. Inspect the archive, resolve conflicts, then review and confirm the plan. Use the external panel address.'
+  : fullImportDescription;
+}
+$('transfer-import-mode').addEventListener('change',updateImportMode);
 function clearTransferPreview() {
   transferPending = null; clearTimeout(transferTimer);
   $('transfer-confirm-form').hidden = true; $('transfer-confirm').checked = false;
   $('transfer-summary').replaceChildren();
 }
 function clearTransferSecrets() {
-  transferSequence++; clearTransferPreview();
-  $('transfer-export-form').reset(); $('transfer-import-form').reset();
+  transferSequence++; clearTransferPreview(); clearTransferSelection();
+  $('transfer-export-form').reset(); $('transfer-import-form').reset(); updateImportMode();
   $('transfer-generate').hidden = true;
 }
 function downloadTransfer(blob, name) {
@@ -727,8 +735,8 @@ $('transfer-export-form').addEventListener('submit', event => {
     notify('Encrypted archive downloaded. Keep its password or key for import.');
   });
 });
-for (const id of ['transfer-file','transfer-import-secret','transfer-import-password','transfer-import-code']) {
-  $(id).addEventListener('input', () => { transferSequence++; clearTransferPreview(); });
+for (const id of ['transfer-file','transfer-import-secret','transfer-import-password','transfer-import-code','transfer-import-mode']) {
+  $(id).addEventListener('input', () => { transferSequence++; clearTransferPreview(); clearTransferSelection(); });
 }
 $('transfer-import-form').addEventListener('submit', event => {
   event.preventDefault(); busy(event.submitter, async () => {
@@ -738,36 +746,110 @@ $('transfer-import-form').addEventListener('submit', event => {
     for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     const archive = btoa(binary); bytes.fill(0); binary = '';
     if (sequence !== transferSequence || !csrf) return;
-    const result = await api('/transfer/preview', 'POST', {archive, secret:$('transfer-import-secret').value,
+    const selected = $('transfer-import-mode').value === 'selected';
+    const result = await api(selected ? '/transfer/inspect' : '/transfer/preview', 'POST', {archive, secret:$('transfer-import-secret').value,
       currentPassword:$('transfer-import-password').value, code:$('transfer-import-code').value});
     $('transfer-import-password').value = ''; $('transfer-import-code').value = '';
     if (sequence !== transferSequence || !csrf) return;
-    transferPending = {archive, ticket:result.ticket};
+    if (selected) {
+      renderTransferSelection(result);
+      transferInspection = {archive, ticket:result.ticket};
+      transferTimer = setTimeout(() => { clearTransferSecrets(); notify('Archive inspection expired. Inspect again.'); }, result.expiresIn * 1000);
+    } else showTransferPlan(result, archive, null);
+  });
+});
+
+function clearTransferSelection() {
+ transferInspection = null; accountChoices = []; deviceChoices = [];
+ $('transfer-selection-form').hidden = true; $('transfer-selection-form').reset();
+ for (const id of ['transfer-selection-settings','transfer-selection-accounts','transfer-selection-devices']) $(id).replaceChildren();
+}
+function showTransferPlan(result, archive, selection) {
+ clearTimeout(transferTimer);
+    transferPending = {archive, ticket:result.ticket, ...(selection ? {selection} : {})};
     const s = result.summary, current = result.current;
     const lines = [`Current server: ${current.serverName} · Accounts: ${current.accounts} · Devices: ${current.devices} · Saved client keys: ${current.storedKeys}`,
       `Current addresses: VPN ${current.vpnHost} · Panel ${current.panelOrigin || "VPN access only"}`,
-      "Full replacement: settings, server keys, passwords, TOTP and recovery codes come from the archive. Existing saved client keys are removed even if the archive excludes them.",
-      "All current VPN connections may be interrupted. Existing profiles work afterwards only if server and device keys, addresses and AWG parameters remain compatible. Sessions and activity history are cleared.",
+      selection ? "Selective import: unselected data and local activity history are preserved. Only explicitly selected credentials are imported. Compatible saved keys are kept when the archive has none; discarding incompatible keys requires explicit permission." : "Full replacement: settings, server keys, passwords, TOTP and recovery codes come from the archive. Existing saved client keys are removed even if the archive excludes them.",
+      "VPN connections may be interrupted. Existing profiles work only with compatible server/device keys, addresses and AWG parameters. All sessions are signed out.",
+      ...(result.plan?.changes || []), ...(result.plan?.warnings || []),
       `Incoming server: ${s.serverName}`, `Created: ${new Date(s.createdAt).toLocaleString()}`, `VPN: ${s.vpnHost}`,
       `Panel: ${s.panelOrigin || 'VPN access only'}`, `Superadministrator: ${s.superadminLogin}`,
       `Accounts: ${s.accounts} · Devices: ${s.devices} · TOTP accounts: ${s.totpAccounts}`,
-      `Saved client private keys: ${s.storedKeys} (${s.clientKeysIncluded ? 'included when available' : 'excluded'})`,
+      selection ? `Saved client keys after import: ${s.storedKeys}. Import incoming keys: ${selection.clientKeys ? 'yes, when available' : 'no'}.` : `Saved client private keys: ${s.storedKeys} (${s.clientKeysIncluded ? 'included when available' : 'excluded'})`,
       `Storage for new client keys: ${s.retainKeys ? 'enabled' : 'disabled'}`];
     $('transfer-summary').replaceChildren(...lines.map(line => textElement('p', line)));
-    for (const [title, inventory] of [['Current objects — replaced or removed', result.currentInventory], ['Archive objects — final configuration', result.incomingInventory]]) {
+    for (const [title, inventory] of [[selection ? 'Current objects' : 'Current objects — replaced or removed', result.currentInventory], ['Result after import', result.resultInventory || result.incomingInventory]]) {
       const details = document.createElement('details');
       details.append(textElement('summary', title));
-      for (const a of inventory.accounts) details.append(textElement('p', `${a.login} · ${a.role} · ${a.id}`, 'small'));
+      for (const a of inventory.accounts) details.append(textElement('p', `${a.login} · ${a.role} · ${a.enabled === "true" ? "Enabled" : "Blocked"} · Manager: ${inventory.accounts.find(m=>m.id===a.managerId)?.login || "—"} · ${a.id}`, 'small'));
       for (const d of inventory.devices) {
         const owner = inventory.accounts.find(a => a.id === d.ownerId);
-        details.append(textElement('p', `${d.name} · ${owner?.login || d.ownerId} · ${d.id}`, 'small'));
+        details.append(textElement('p', `${d.name} · ${owner?.login || d.ownerId} · ${d.group} · ${d.enabled === "true" ? "Enabled" : "Disabled"} · 10.8.0.${d.slot} · ${d.id}`, 'small'));
       }
       $('transfer-summary').append(details);
     }
     $('transfer-confirm-form').hidden = false;
+    $('transfer-confirm-label').textContent = selection ? 'Apply only the selected changes shown above and sign out all sessions.' : 'Replace this installation with the configuration above and sign out all sessions.';
     transferTimer = setTimeout(() => { clearTransferSecrets(); notify('Import preview expired. Select the file and preview again.'); }, result.expiresIn * 1000);
     $('transfer-summary').scrollIntoView({block:'nearest'});
-  });
+}
+function importSelect(label, options) {
+ const wrapper = textElement('label', label), input = document.createElement('select');
+ for (const [value,text] of options) {const option = textElement('option',text);option.value=value;input.append(option);}
+ wrapper.append(input);return {wrapper,input};
+}
+function importCheck(label) {
+ const wrapper = textElement('label','','confirmation'), input=document.createElement('input');input.type='checkbox';wrapper.append(input,document.createTextNode(label));return {wrapper,input};
+}
+function renderTransferSelection(result) {
+ clearTransferSelection();
+ // Inspection data stays in memory only until expiry or leaving this section.
+ const settings = [['serverName','Server name'],['dns','DNS'],['mtu','MTU'],['keepalive','Keepalive'],['routes','Client routes'],['vpnHost','VPN domain/IP'],['panelOrigin','Panel address'],['keyPolicy','Key storage policy'],['serverKeys','Server keys (all devices)'],['awgProfile','AWG profile (all devices)']];
+ for (const [key,label] of settings) {const field=importCheck(label);field.input.value=key;$('transfer-selection-settings').append(field.wrapper);}
+ const existing=result.currentInventory;
+ for (const a of result.incomingInventory.accounts) {
+  const row=textElement('div','','account-row');row.append(textElement('strong',`${a.login} · ${a.role}`));
+  const action=importSelect('Action',[['skip','Skip'],['add','Add'],['replace','Replace target'],['map','Map without changing target']]);
+  const targets=existing.accounts.filter(x=>x.role===a.role);
+  const target=importSelect('Target account',[]);
+  const matched=existing.accounts.find(x=>x.id===a.id)||existing.accounts.find(x=>x.login===a.login&&x.role===a.role);if(matched)target.input.value=matched.id;
+  const login=document.createElement('input');login.value=a.login;login.maxLength=64;const loginLabel=textElement('label','Imported login');loginLabel.append(login);
+  const password=importCheck('Import password'),totp=importCheck('Import TOTP and recovery codes (absence disables TOTP)');
+  const updateFields=()=>{
+   const mode=action.input.value;target.input.disabled=!['replace','map'].includes(mode);
+   if(!target.input.disabled&&!target.input.options.length) {for(const x of targets){const option=textElement('option',x.login);option.value=x.id;target.input.append(option);}if(matched)target.input.value=matched.id;}
+   login.disabled=password.input.disabled=totp.input.disabled=['skip','map'].includes(mode);
+  };
+  action.input.addEventListener('change',updateFields);updateFields();
+  row.append(action.wrapper,target.wrapper,loginLabel,password.wrapper,totp.wrapper);$('transfer-selection-accounts').append(row);
+  accountChoices.push({id:a.id,action:action.input,target:target.input,login,password:password.input,totp:totp.input});
+ }
+ for (const d of result.incomingInventory.devices) {
+  const row=textElement('div','','account-row');const owner=result.incomingInventory.accounts.find(a=>a.id===d.ownerId);
+  row.append(textElement('strong',`${d.name} · ${owner?.login || d.ownerId}`));
+  const action=importSelect('Action',[['skip','Skip'],['add','Add'],['replace','Replace target']]);
+  const target=importSelect('Target device',existing.devices.map(x=>[x.id,x.name]));if(existing.devices.some(x=>x.id===d.id))target.input.value=d.id;
+  const slot=document.createElement('input');slot.type='number';slot.min='2';slot.max='254';slot.value=d.slot;const slotLabel=textElement('label','VPN address slot');slotLabel.append(slot);
+  row.append(action.wrapper,target.wrapper,slotLabel);$('transfer-selection-devices').append(row);
+  deviceChoices.push({id:d.id,action:action.input,target:target.input,slot});
+ }
+ $('transfer-selection-form').hidden=false;
+}
+$('transfer-selection-form').addEventListener('input',()=>{transferSequence++;transferPending=null;$('transfer-confirm-form').hidden=true;$('transfer-confirm').checked=false;$('transfer-summary').replaceChildren();});
+$('transfer-selection-form').addEventListener('submit',event=>{
+ event.preventDefault();busy(event.submitter,async()=>{
+  if(!transferInspection)throw new Error('Inspect the archive again.');
+  const sequence=++transferSequence, inspected=transferInspection;
+  const selection={settings:[...$('transfer-selection-settings').querySelectorAll('input:checked')].map(x=>x.value),
+   accounts:accountChoices.filter(x=>x.action.value!=='skip').map(x=>({id:x.id,action:x.action.value,targetId:x.action.value==='add'?'':x.target.value,login:x.action.value==='map'?'':x.login.value,password:x.action.value==='map'?false:x.password.checked,totp:x.action.value==='map'?false:x.totp.checked})),
+   devices:deviceChoices.filter(x=>x.action.value!=='skip').map(x=>({id:x.id,action:x.action.value,targetId:x.action.value==='add'?'':x.target.value,slot:Number(x.slot.value)})),
+   clientKeys:$('transfer-selection-keys').checked,dropIncompatibleKeys:$('transfer-selection-drop').checked,acceptDisruption:$('transfer-selection-disruption').checked};
+  const result=await api('/transfer/preview','POST',{...inspected,secret:$('transfer-import-secret').value,selection});
+  if(sequence!==transferSequence||!csrf)return;
+  transferInspection={archive:inspected.archive,ticket:result.ticket};
+  showTransferPlan(result,inspected.archive,selection);
+ });
 });
 $('transfer-confirm-form').addEventListener('submit', event => {
   event.preventDefault(); busy(event.submitter, async () => {
@@ -777,7 +859,7 @@ $('transfer-confirm-form').addEventListener('submit', event => {
     try {
       const result = await api('/transfer/import', 'POST', {...pending, secret, confirm:true});
       signedOut();
-      notify(`Import complete. Sign in as ${result.login} with the source server credentials${result.panelOrigin ? ' at ' + result.panelOrigin : ''}. Update DNS and stop the old VPN server when ready.`);
+      notify(`Import complete. Sign in as ${result.login} with the credentials shown in the import plan${result.panelOrigin ? ' at ' + result.panelOrigin : ''}. Update DNS and stop the old VPN server when ready.`);
     } catch (error) {
       if (error.status) throw error;
       signedOut(); throw new Error('Connection interrupted during import. Check the destination and try signing in with the source credentials before attempting another import.');

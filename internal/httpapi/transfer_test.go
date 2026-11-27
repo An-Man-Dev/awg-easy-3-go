@@ -144,3 +144,40 @@ func (b unreadableTransferBody) Read([]byte) (int, error) {
 	return 0, nil
 }
 func (b unreadableTransferBody) Close() error { return nil }
+
+func TestSelectiveImportBindsInspectionAndChoices(t *testing.T) {
+	a := testAPI(t, true)
+	cookie := accountSession(a, model.BootstrapAccountID)
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	export := transferCall(a, "export", transferRequest{Password: "test-password-12345", Secret: key, Mode: "key", Include: true}, cookie, "test-csrf")
+	if export.Code != 200 {
+		t.Fatal(export.Code)
+	}
+	req := transferRequest{Password: "test-password-12345", Secret: key, Archive: bytes.Clone(export.Body.Bytes())}
+	inspect := transferCall(a, "inspect", req, cookie, "test-csrf")
+	if inspect.Code != 200 {
+		t.Fatal(inspect.Code, inspect.Body.String())
+	}
+	var proof struct{ Ticket string }
+	json.Unmarshal(inspect.Body.Bytes(), &proof)
+	commit := transferRequest{Secret: key, Archive: req.Archive, Confirm: true, Ticket: proof.Ticket}
+	if w := transferCall(a, "import", commit, cookie, "test-csrf"); w.Code != 409 {
+		t.Fatal("inspection used as commit", w.Code)
+	}
+	inspect = transferCall(a, "inspect", req, cookie, "test-csrf")
+	json.Unmarshal(inspect.Body.Bytes(), &proof)
+	selection := &portable.Selection{Settings: []string{"serverName"}, AcceptDisruption: true}
+	req.Password = ""
+	req.Ticket = proof.Ticket
+	req.Selection = selection
+	preview := transferCall(a, "preview", req, cookie, "test-csrf")
+	if preview.Code != 200 {
+		t.Fatal("inspection proof", preview.Code, preview.Body.String())
+	}
+	json.Unmarshal(preview.Body.Bytes(), &proof)
+	commit.Ticket = proof.Ticket
+	commit.Selection = &portable.Selection{Settings: []string{"dns"}, AcceptDisruption: true}
+	if w := transferCall(a, "import", commit, cookie, "test-csrf"); w.Code != 409 {
+		t.Fatal("modified selection accepted", w.Code)
+	}
+}

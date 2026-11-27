@@ -5,6 +5,8 @@ import (
 	"awg-panel/internal/model"
 	"awg-panel/internal/portable"
 	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -15,17 +17,20 @@ type importTicket struct {
 	Token, AccountID, Fingerprint string
 	Revision                      int64
 	Hash                          [32]byte
+	SelectionHash                 [32]byte
+	Planned                       bool
 	Expires                       time.Time
 }
 type transferRequest struct {
-	Password string `json:"currentPassword"`
-	Code     string `json:"code"`
-	Secret   string `json:"secret"`
-	Mode     string `json:"mode"`
-	Include  bool   `json:"includeClientKeys"`
-	Archive  []byte `json:"archive"`
-	Ticket   string `json:"ticket"`
-	Confirm  bool   `json:"confirm"`
+	Password  string              `json:"currentPassword"`
+	Code      string              `json:"code"`
+	Secret    string              `json:"secret"`
+	Mode      string              `json:"mode"`
+	Include   bool                `json:"includeClientKeys"`
+	Archive   []byte              `json:"archive"`
+	Ticket    string              `json:"ticket"`
+	Confirm   bool                `json:"confirm"`
+	Selection *portable.Selection `json:"selection,omitempty"`
 }
 
 func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
@@ -43,7 +48,7 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		return
 	}
 	path := r.URL.Path
-	if path != "/api/transfer/export" && path != "/api/transfer/preview" && path != "/api/transfer/import" {
+	if path != "/api/transfer/export" && path != "/api/transfer/preview" && path != "/api/transfer/import" && path != "/api/transfer/inspect" {
 		problem(w, 404, "Not found")
 		return
 	}
@@ -79,7 +84,20 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		problem(w, 401, "Authentication required")
 		return
 	}
-	if path != "/api/transfer/import" {
+	hash := sha256.Sum256(v.Archive)
+	selectionBytes, _ := json.Marshal(v.Selection)
+	selectionHash := sha256.Sum256(selectionBytes)
+	var proof importTicket
+	if path == "/api/transfer/preview" && v.Ticket != "" {
+		a.mu.Lock()
+		proof = a.transfers[cookie.Value]
+		a.mu.Unlock()
+		if proof.Token != v.Ticket || proof.AccountID != owner.ID || proof.Revision != owner.Revision || proof.Hash != hash || !time.Now().Before(proof.Expires) {
+			problem(w, 409, "Archive inspection expired; inspect again")
+			return
+		}
+	}
+	if path != "/api/transfer/import" && proof.Token == "" {
 		if !auth.VerifyPassword(owner.PasswordHash, v.Password) {
 			problem(w, 400, "Current account password is incorrect")
 			return
@@ -108,14 +126,13 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		w.Write(data)
 		return
 	}
-	hash := sha256.Sum256(v.Archive)
 	var ticket importTicket
 	if path == "/api/transfer/import" {
 		a.mu.Lock()
 		ticket = a.transfers[cookie.Value]
 		delete(a.transfers, cookie.Value)
 		a.mu.Unlock()
-		if !v.Confirm || ticket.Token == "" || ticket.Token != v.Ticket || ticket.AccountID != owner.ID || ticket.Revision != owner.Revision || ticket.Hash != hash || !time.Now().Before(ticket.Expires) {
+		if !ticket.Planned || ticket.SelectionHash != selectionHash || !v.Confirm || ticket.Token == "" || ticket.Token != v.Ticket || ticket.AccountID != owner.ID || ticket.Revision != owner.Revision || ticket.Hash != hash || !time.Now().Before(ticket.Expires) {
 			problem(w, 409, "Preview expired or changed; preview the archive again")
 			return
 		}
@@ -125,13 +142,26 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		problem(w, 400, err.Error())
 		return
 	}
-	if path == "/api/transfer/preview" {
-		current, fingerprint, err := a.service.PreviewImport(snapshot)
+	if path == "/api/transfer/preview" || path == "/api/transfer/inspect" {
+		current, fingerprint, err := a.service.InspectImport()
+		result := snapshot
+		plan := portable.MergePlan{Changes: []string{}, Warnings: []string{}}
+		if err == nil && path == "/api/transfer/preview" {
+			if v.Selection != nil {
+				result, plan, err = portable.Merge(current, snapshot, *v.Selection)
+			} else if current.Requirements != snapshot.Requirements {
+				problem(w, 409, "Protocol, ports, subnets and IPv6 mode must match for full replacement")
+				return
+			}
+		}
 		if err != nil {
 			problem(w, 409, err.Error())
 			return
 		}
-		ticket = importTicket{Token: model.Random(32), AccountID: owner.ID, Revision: owner.Revision, Hash: hash, Fingerprint: fingerprint, Expires: time.Now().Add(5 * time.Minute)}
+		ticket = importTicket{Token: model.Random(32), AccountID: owner.ID, Revision: owner.Revision, Hash: hash, Fingerprint: fingerprint, SelectionHash: selectionHash, Planned: path == "/api/transfer/preview", Expires: time.Now().Add(5 * time.Minute)}
+		if proof.Token != "" {
+			ticket.Expires = proof.Expires
+		}
 		a.mu.Lock()
 		for key, t := range a.transfers {
 			if _, ok := a.sessions[key]; !ok || !time.Now().Before(t.Expires) {
@@ -140,10 +170,11 @@ func (a *API) transfer(w http.ResponseWriter, r *http.Request, sess session) {
 		}
 		a.transfers[cookie.Value] = ticket
 		a.mu.Unlock()
-		jsonReply(w, 200, map[string]any{"summary": snapshot.Summary(), "current": current.Summary(), "currentInventory": importInventory(current), "incomingInventory": importInventory(snapshot), "ticket": ticket.Token, "expiresIn": 300})
+		jsonReply(w, 200, map[string]any{"summary": result.Summary(), "plan": plan, "selective": v.Selection != nil, "resultInventory": importInventory(result), "current": current.Summary(), "currentInventory": importInventory(current), "incomingInventory": importInventory(snapshot), "ticket": ticket.Token, "expiresIn": max(1, int(time.Until(ticket.Expires).Seconds()))})
 		return
 	}
-	if err = a.service.ImportArchive(r.Context(), snapshot, ticket.Fingerprint); err != nil {
+	snapshot, err = a.service.ImportSelection(r.Context(), snapshot, ticket.Fingerprint, v.Selection)
+	if err != nil {
 		problem(w, 409, err.Error())
 		return
 	}
@@ -165,10 +196,10 @@ func importInventory(s portable.Snapshot) map[string]any {
 	accounts := make([]map[string]string, 0, len(s.Accounts))
 	devices := make([]map[string]string, 0, len(s.State.Peers))
 	for _, a := range s.Accounts {
-		accounts = append(accounts, map[string]string{"id": a.ID, "login": a.Login, "role": a.Role})
+		accounts = append(accounts, map[string]string{"id": a.ID, "login": a.Login, "role": a.Role, "managerId": a.ManagerID, "enabled": fmt.Sprint(a.Enabled)})
 	}
 	for _, p := range s.State.Peers {
-		devices = append(devices, map[string]string{"id": p.ID, "name": p.Name, "ownerId": p.OwnerID})
+		devices = append(devices, map[string]string{"id": p.ID, "name": p.Name, "ownerId": p.OwnerID, "slot": fmt.Sprint(p.Slot), "group": p.Group, "enabled": fmt.Sprint(p.Enabled)})
 	}
 	return map[string]any{"accounts": accounts, "devices": devices}
 }

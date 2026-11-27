@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -246,5 +247,89 @@ func TestImportCrashBeforeCommitRestoresDestination(t *testing.T) {
 	after, err := dest.ImportFingerprint()
 	if err != nil || before != after {
 		t.Fatal("interrupted import changed destination", err)
+	}
+}
+
+func TestImportCommitFailureAfterApply(t *testing.T) {
+	source := initialized(t)
+	incoming := transferSnapshot(t, source)
+	dest := initialized(t)
+	before, err := dest.ImportFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A deferred constraint fails at COMMIT, after every statement and apply succeeded.
+	for _, query := range []string{
+		`CREATE TABLE commit_parent(id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE commit_failure(id INTEGER REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED)`,
+		`CREATE TRIGGER fail_import_commit AFTER UPDATE ON app_settings BEGIN INSERT INTO commit_failure VALUES(1); END`,
+	} {
+		if _, err = dest.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	applied := false
+	_, err = dest.Import(context.Background(), incoming, before, func(model.State) error { applied = true; return nil })
+	if !applied || !errors.Is(err, ErrImportCommit) {
+		t.Fatal("commit failure not classified after apply", err)
+	}
+	after, err := dest.ImportFingerprint()
+	if err != nil || after != before {
+		t.Fatal("failed commit changed durable state", err)
+	}
+}
+
+func TestSelectiveImportPreservesUnselectedRows(t *testing.T) {
+	dest := initialized(t)
+	state, err := dest.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = dest.db.Exec("INSERT INTO device_observations(device_id,last_handshake) VALUES(?,123)", state.Peers[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = dest.db.Exec("INSERT INTO audit(at,actor,action,target) VALUES('now','test','old.event','test')"); err != nil {
+		t.Fatal(err)
+	}
+	current := transferSnapshot(t, dest)
+	fingerprint, err := dest.ImportFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	incoming := transferSnapshot(t, initialized(t))
+	incoming.State.Settings.ServerName = "Selected name"
+	merged, _, err := portable.Merge(current, incoming, portable.Selection{Settings: []string{"serverName"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := dest.Account(model.BootstrapAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("selected network apply failed")
+	if _, err = dest.ImportSelected(context.Background(), merged, fingerprint, func(model.State) error { return failure }); !errors.Is(err, failure) {
+		t.Fatal("selective rollback", err)
+	}
+	rollbackFingerprint, err := dest.ImportFingerprint()
+	if err != nil || rollbackFingerprint != fingerprint {
+		t.Fatal("selective rollback changed data", err)
+	}
+	if _, err = dest.ImportSelected(context.Background(), merged, fingerprint, func(model.State) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	after, err := dest.Account(model.BootstrapAccountID)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("unselected account changed", err)
+	}
+	saved, err := dest.Load()
+	if err != nil || saved.Peers[0].PrivateKey != state.Peers[0].PrivateKey {
+		t.Fatal("unselected key changed", err)
+	}
+	var n int
+	if err = dest.db.QueryRow("SELECT count(*) FROM device_observations WHERE last_handshake=123").Scan(&n); err != nil || n != 1 {
+		t.Fatal("observation lost", err)
+	}
+	if err = dest.db.QueryRow("SELECT count(*) FROM audit WHERE action='old.event'").Scan(&n); err != nil || n != 1 {
+		t.Fatal("local audit lost", err)
 	}
 }

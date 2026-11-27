@@ -51,8 +51,47 @@ func (s *Service) PreviewImport(in portable.Snapshot) (portable.Snapshot, string
 	return s.Store.ImportPreview()
 }
 func (s *Service) ImportArchive(ctx context.Context, in portable.Snapshot, fingerprint string) error {
+	_, err := s.ImportSelection(ctx, in, fingerprint, nil)
+	return err
+}
+func (s *Service) InspectImport() (portable.Snapshot, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failed {
+		return portable.Snapshot{}, "", fmt.Errorf("service is stopping")
+	}
+	current, fp, err := s.Store.ImportPreview()
+	current.Requirements = s.requirements()
+	return current, fp, err
+}
+func (s *Service) ImportSelection(ctx context.Context, in portable.Snapshot, fingerprint string, selection *portable.Selection) (portable.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failed {
+		return portable.Snapshot{}, fmt.Errorf("service is stopping")
+	}
+	if selection != nil {
+		current, fp, err := s.Store.ImportPreview()
+		if err != nil {
+			return portable.Snapshot{}, err
+		}
+		if fp != fingerprint {
+			return portable.Snapshot{}, store.ErrSettingsConflict
+		}
+		current.Requirements = s.requirements()
+		merged, plan, err := portable.Merge(current, in, *selection)
+		if err != nil {
+			return portable.Snapshot{}, err
+		}
+		if len(plan.Warnings) > 0 && !selection.AcceptDisruption {
+			return portable.Snapshot{}, fmt.Errorf("confirm the effects shown in the selective import preview")
+		}
+		in = merged
+	}
+	err := s.importArchiveLocked(ctx, in, fingerprint, selection != nil)
+	return in, err
+}
+func (s *Service) importArchiveLocked(ctx context.Context, in portable.Snapshot, fingerprint string, selective bool) error {
 	if s.failed {
 		return fmt.Errorf("service is stopping")
 	}
@@ -73,7 +112,11 @@ func (s *Service) ImportArchive(ctx context.Context, in portable.Snapshot, finge
 	}
 	oldNetwork := *s.Network
 	touched := false
-	next, err := s.Store.Import(apply, in, fingerprint, func(state model.State) error { touched = true; return s.Network.ApplyAddresses(apply, state, prepared) })
+	importSnapshot := s.Store.Import
+	if selective {
+		importSnapshot = s.Store.ImportSelected
+	}
+	next, err := importSnapshot(apply, in, fingerprint, func(state model.State) error { touched = true; return s.Network.ApplyAddresses(apply, state, prepared) })
 	if err != nil {
 		if errors.Is(err, store.ErrImportCommit) {
 			s.fail(err)
@@ -90,11 +133,25 @@ func (s *Service) ImportArchive(ctx context.Context, in portable.Snapshot, finge
 		}
 		return err
 	}
+	if selective {
+		previous := map[string]string{}
+		for _, p := range s.State.Peers {
+			previous[p.ID] = p.PublicKey
+		}
+		for _, p := range next.Peers {
+			if previous[p.ID] != p.PublicKey {
+				delete(s.observations, p.ID)
+				delete(s.liveHandshakes, p.ID)
+			}
+		}
+	}
 	s.State = next
 	s.Config = nextConfig
-	s.observations = map[string]time.Time{}
-	s.liveHandshakes = map[string]time.Time{}
-	s.observedAt = time.Time{}
+	if !selective {
+		s.observations = map[string]time.Time{}
+		s.liveHandshakes = map[string]time.Time{}
+		s.observedAt = time.Time{}
+	}
 	s.observationOK = false
 	return nil
 }
