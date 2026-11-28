@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"strings"
 	"time"
 
 	"awg-panel/internal/model"
@@ -59,6 +61,13 @@ func (s *Store) SaveSettings(next model.Settings, expected int64) error {
 		return err
 	}
 	defer tx.Rollback()
+	before, err := readSettings(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if before == nil || before.Revision != expected {
+		return ErrSettingsConflict
+	}
 	dns, routes := clientJSON(next.Client)
 	result, err := tx.ExecContext(ctx, `UPDATE app_settings SET revision=?,server_name=?,dns=?,mtu=?,keepalive=?,allowed_ips=? WHERE id=1 AND revision=?`, next.Revision, next.ServerName, dns, next.Client.MTU, next.Client.PersistentKeepalive, routes, expected)
 	if err != nil {
@@ -72,5 +81,27 @@ func (s *Store) SaveSettings(next model.Settings, expected int64) error {
 		return ErrSettingsConflict
 	}
 
+	fields := []string{}
+	if before.ServerName != next.ServerName {
+		fields = append(fields, "serverName")
+	}
+	if !reflect.DeepEqual(before.Client.DNS, next.Client.DNS) {
+		fields = append(fields, "dns")
+	}
+	if before.Client.MTU != next.Client.MTU {
+		fields = append(fields, "mtu")
+	}
+	if before.Client.PersistentKeepalive != next.Client.PersistentKeepalive {
+		fields = append(fields, "keepalive")
+	}
+	if !reflect.DeepEqual(before.Client.AllowedIPs, next.Client.AllowedIPs) {
+		fields = append(fields, "routes")
+	}
+	if len(fields) > 0 {
+		// Global settings are writable only by the single protected superadministrator.
+		if err = writeAudit(ctx, tx, AuditRecord{Actor: model.BootstrapAccountID, Action: "settings.update", Target: strings.Join(fields, ",")}); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }

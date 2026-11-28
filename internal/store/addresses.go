@@ -4,6 +4,7 @@ import (
 	"awg-panel/internal/model"
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,16 @@ func (s *Store) SaveAddresses(next model.Addresses, expected int64) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := s.db.ExecContext(ctx, "UPDATE server_addresses SET revision=?,vpn_host=?,panel_origin=? WHERE id=1 AND revision=?", next.Revision, next.VPNHost, next.PanelOrigin, expected)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	before, err := readAddresses(ctx, tx)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE server_addresses SET revision=?,vpn_host=?,panel_origin=? WHERE id=1 AND revision=?", next.Revision, next.VPNHost, next.PanelOrigin, expected)
 	if err != nil {
 		return err
 	}
@@ -35,5 +45,17 @@ func (s *Store) SaveAddresses(next model.Addresses, expected int64) error {
 	if count != 1 {
 		return ErrSettingsConflict
 	}
-	return nil
+	fields := []string{}
+	if before.VPNHost != next.VPNHost {
+		fields = append(fields, "vpnHost")
+	}
+	if before.PanelOrigin != next.PanelOrigin {
+		fields = append(fields, "panelOrigin")
+	}
+	if len(fields) > 0 {
+		if err = writeAudit(ctx, tx, AuditRecord{Actor: model.BootstrapAccountID, Action: "addresses.update", Target: strings.Join(fields, ",")}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

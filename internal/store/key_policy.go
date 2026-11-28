@@ -25,7 +25,16 @@ func (s *Store) SaveKeyPolicy(next model.KeyPolicy, expected int64) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := s.db.ExecContext(ctx, "UPDATE key_policy SET revision=?,retain=? WHERE id=1 AND revision=?", next.Revision, next.Retain, expected)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	before, err := readKeyPolicy(ctx, tx)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE key_policy SET revision=?,retain=? WHERE id=1 AND revision=?", next.Revision, next.Retain, expected)
 	if err != nil {
 		return err
 	}
@@ -36,7 +45,16 @@ func (s *Store) SaveKeyPolicy(next model.KeyPolicy, expected int64) error {
 	if count != 1 {
 		return ErrSettingsConflict
 	}
-	return nil
+	if before.Retain != next.Retain {
+		action := "keys.retention.disable"
+		if next.Retain {
+			action = "keys.retention.enable"
+		}
+		if err = writeAudit(ctx, tx, AuditRecord{Actor: model.BootstrapAccountID, Action: action, Target: "retain"}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // DELETE uses the connection's secure_delete and DELETE journal settings. This
@@ -66,6 +84,11 @@ func (s *Store) PurgeStoredKeys(revision int64) (int64, error) {
 	count, err := result.RowsAffected()
 	if err != nil {
 		return 0, err
+	}
+	if count > 0 {
+		if err = writeAudit(ctx, tx, AuditRecord{Actor: model.BootstrapAccountID, Action: "keys.stored.purge", Target: fmt.Sprint(count)}); err != nil {
+			return 0, err
+		}
 	}
 	return count, tx.Commit()
 }

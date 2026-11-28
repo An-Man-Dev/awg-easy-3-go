@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="dark light">
   <title>AWG Panel</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=network-status-20261128">
-  <script src="/app.js?v=network-status-20261128" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=settings-audit-20261128">
+  <script src="/app.js?v=settings-audit-20261128" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -228,7 +228,7 @@
     <p id="account-delete-name"></p><p class="muted">First remove this account’s devices and transfer its subordinate users to another administrator. Deletion signs out all remaining sessions and cannot be undone.</p>
     <label class="confirmation"><input type="checkbox" id="account-delete-confirm" required> Confirm account deletion</label><button type="submit" class="danger wide">Delete account</button>
   </form></section>
-  <section id="audit-dialog" aria-labelledby="audit-title" class="panel" hidden><div class="dialog-heading"><h2 id="audit-title">Activity log</h2><button class="quiet close-dialog" aria-label="Close log">Back</button></div><p class="muted">Latest 100 committed account and device changes. Passwords and keys are never included. Dates use your local time zone.</p><div id="audit-list"></div></section>
+  <section id="audit-dialog" aria-labelledby="audit-title" class="panel" hidden><div class="dialog-heading"><h2 id="audit-title">Activity log</h2><button class="quiet close-dialog" aria-label="Close log">Back</button></div><p class="muted">Latest 100 committed account, device and server changes. Settings events list changed fields, not their values. Saving does not confirm network application; check the VPN status separately. Dates use your local time zone.</p><div id="audit-list"></div></section>
 
   <section id="security-dialog" aria-labelledby="security-title" class="panel" hidden>
     <div class="dialog-heading"><h2 id="security-title">Two-factor authentication</h2><button type="button" class="quiet close-dialog" aria-label="Close security">Back</button></div>

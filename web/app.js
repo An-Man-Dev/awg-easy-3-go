@@ -574,7 +574,10 @@ $('audit').addEventListener('click', () => busy($('audit'), async () => {
   const label = id => accounts.find(a => a.id === id)?.login || peers.find(p => p.id === id)?.name || id;
   $('audit-list').replaceChildren(...entries.map(entry => {
     const row = textElement('article', '', 'account-row');
-    row.append(textElement('strong', entry.action), textElement('p', `${label(entry.actor)} → ${label(entry.target)}`), textElement('p', new Date(entry.at).toLocaleString(), 'small muted')); return row;
+    const titles={'settings.update':'Export defaults saved','addresses.update':'Server addresses saved','keys.retention.enable':'Client key storage enabled','keys.retention.disable':'Client key storage disabled','keys.stored.purge':'Saved client keys deleted'};
+    const fields={serverName:'Server name',dns:'DNS',mtu:'MTU',keepalive:'Keepalive',routes:'Client routes',vpnHost:'VPN domain/IP',panelOrigin:'Panel address',retain:'Key storage policy'};
+    const target=['settings.update','addresses.update'].includes(entry.action) ? entry.target.split(',').map(field=>fields[field]||field).join(', ') : entry.action==='keys.stored.purge' ? `${entry.target} saved keys` : entry.action.startsWith('keys.retention.') ? 'Key storage policy' : label(entry.target);
+    row.append(textElement('strong', titles[entry.action]||entry.action), textElement('p', `${label(entry.actor)} → ${target}`), textElement('p', new Date(entry.at).toLocaleString(), 'small muted')); return row;
   }));
   if (!entries.length) $('audit-list').append(textElement('p', 'No changes recorded yet.', 'muted'));
   closePanel('accounts-dialog'); openPanel('audit-dialog'); notify('');
