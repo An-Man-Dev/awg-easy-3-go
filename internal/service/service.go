@@ -16,6 +16,8 @@ import (
 
 type Service struct {
 	mu             sync.Mutex
+	applicationMu  sync.Mutex
+	application    ApplicationStatus
 	State          model.State
 	Store          *store.Store
 	Network        *network.Network
@@ -70,6 +72,7 @@ func (s *Service) fail(err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	_ = s.Network.Down(ctx)
+	s.ApplicationFailed()
 	select {
 	case s.Fatal <- err:
 	default:
@@ -133,6 +136,7 @@ func (s *Service) commitPeers(ctx context.Context, next model.State, audit store
 	if err := reachableHome(next); err != nil {
 		return err
 	}
+	s.ApplicationStarted()
 	if err := s.Store.SaveAudited(next, audit); err != nil {
 		s.fail(err)
 		return fmt.Errorf("state could not be committed; service is stopping")
@@ -158,6 +162,7 @@ func (s *Service) commitPeers(ctx context.Context, next model.State, audit store
 		s.fail(err)
 		return fmt.Errorf("state saved but network apply failed; service is restarting")
 	}
+	s.ApplicationApplied()
 	return nil
 }
 
@@ -233,7 +238,13 @@ func (s *Service) Healthy(ctx context.Context) error {
 	if s.failed {
 		return fmt.Errorf("service is stopping")
 	}
-	return s.Network.Healthy(ctx)
+	err := s.Network.Healthy(ctx)
+	if err != nil {
+		s.setApplication("error", false)
+	} else if status := s.ApplicationStatus(); status.State == "error" && !status.Restarting {
+		s.ApplicationApplied()
+	}
+	return err
 }
 func (s *Service) Watch(ctx context.Context) {
 	t := time.NewTicker(20 * time.Second)
@@ -247,6 +258,8 @@ func (s *Service) Watch(ctx context.Context) {
 			repaired, err := s.Network.Reconcile(ctx, s.State)
 			if err != nil {
 				s.fail(err)
+			} else if repaired {
+				s.ApplicationApplied()
 			}
 			s.mu.Unlock()
 			if err != nil {

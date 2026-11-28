@@ -36,6 +36,7 @@ func (s *Service) UpdateAddresses(ctx context.Context, next model.Addresses) (mo
 	if err != nil {
 		return model.Addresses{}, fmt.Errorf("addresses could not be resolved; no changes saved")
 	}
+	s.ApplicationStarted()
 	expected := next.Revision
 	next.Revision++
 	if err = s.Store.SaveAddresses(next, expected); err != nil {
@@ -49,5 +50,6 @@ func (s *Service) UpdateAddresses(ctx context.Context, next model.Addresses) (mo
 		s.fail(err)
 		return model.Addresses{}, fmt.Errorf("addresses saved but network apply failed; service is restarting")
 	}
+	s.ApplicationApplied()
 	return next, nil
 }

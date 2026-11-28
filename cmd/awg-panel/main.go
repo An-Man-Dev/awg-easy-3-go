@@ -159,13 +159,17 @@ func run() error {
 		defer c()
 		_ = n.Down(stop)
 	}()
+	s := &service.Service{State: state, Store: st, Network: n, Config: c, Fatal: make(chan error, 1)}
+	s.InitializeApplicationStatus()
 	if err = n.WaitInterface(ctx); err != nil {
+		s.ApplicationFailed()
 		return err
 	}
 	if err = n.Configure(ctx, state); err != nil {
+		s.ApplicationFailed()
 		return err
 	}
-	s := &service.Service{State: state, Store: st, Network: n, Config: c, Fatal: make(chan error, 1)}
+	s.ApplicationApplied()
 	if err = s.LoadObservations(); err != nil {
 		return err
 	}

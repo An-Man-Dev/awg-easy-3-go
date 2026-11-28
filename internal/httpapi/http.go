@@ -252,12 +252,30 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if sess.Role != "superadmin" {
 		switch r.URL.Path {
-		case "/api/settings", "/api/addresses", "/api/key-policy", "/api/keys/stored", "/api/audit":
+		case "/api/settings", "/api/addresses", "/api/key-policy", "/api/keys/stored", "/api/audit", "/api/network-status", "/api/network-reapply":
 			problem(w, 403, "Superadministrator access required")
 			return
 		}
 	}
 	switch {
+	case r.URL.Path == "/api/network-status" && r.Method == "GET":
+		jsonReply(w, 200, a.service.ApplicationStatus())
+	case r.URL.Path == "/api/network-reapply" && r.Method == "POST":
+		var input struct {
+			Confirm bool `json:"confirm"`
+		}
+		if !decode(w, r, &input) {
+			return
+		}
+		if !input.Confirm {
+			problem(w, 400, "Confirm reapplying the saved configuration; VPN connections may be interrupted")
+			return
+		}
+		if err := a.service.Reapply(r.Context()); err != nil {
+			problem(w, 503, err.Error())
+			return
+		}
+		jsonReply(w, 200, a.service.ApplicationStatus())
 	case r.URL.Path == "/api/transfer" || strings.HasPrefix(r.URL.Path, "/api/transfer/"):
 		a.transfer(w, r, sess)
 	case r.URL.Path == "/api/account/sessions" && r.Method == "DELETE":

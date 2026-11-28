@@ -197,6 +197,7 @@ func (s *Service) WriteAccount(ctx context.Context, actor string, next store.Acc
 	}
 	s.State = state
 	if changed {
+		s.ApplicationStarted()
 		s.observationOK = false
 		apply, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
@@ -204,6 +205,7 @@ func (s *Service) WriteAccount(ctx context.Context, actor string, next store.Acc
 			s.fail(err)
 			return store.Account{}, fmt.Errorf("account saved but VPN update failed; service is restarting")
 		}
+		s.ApplicationApplied()
 	}
 	if !remove {
 		saved, e := s.Store.Account(result.ID)

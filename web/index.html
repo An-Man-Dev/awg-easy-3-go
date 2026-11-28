@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="dark light">
   <title>AWG Panel</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=selected-import-20261127">
-  <script src="/app.js?v=selected-import-20261127" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=network-status-20261128">
+  <script src="/app.js?v=network-status-20261128" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -23,6 +23,15 @@
   </nav>
   <main id="workspace">
     <div id="notice" role="status" aria-live="polite" hidden></div>
+    <div id="network-status" class="account-row" hidden>
+      <div class="actions"><span id="network-status-text" role="status" aria-live="polite"></span>
+        <details id="network-reapply-options"><summary>Reapply</summary>
+          <label class="confirmation"><input id="network-reapply-confirm" type="checkbox"> Allow a brief interruption of VPN connections</label>
+          <button id="network-reapply" class="quiet" disabled>Reapply saved configuration</button>
+        </details>
+      </div>
+      <p id="network-status-detail" class="small muted"></p>
+    </div>
     <section id="login-view" class="login-card">
       <h1>Sign in</h1>
       <form id="login-form">
@@ -51,7 +60,7 @@
   <section id="settings-dialog" aria-labelledby="settings-title" class="panel" hidden>
     <form id="settings-form">
       <div class="dialog-heading"><h2 id="settings-title">Server settings</h2><button type="button" class="quiet close-dialog" aria-label="Close settings">Back</button></div>
-      <p class="muted" id="settings-scope">These settings are used the next time any device configuration is exported. Profiles already installed on devices do not update automatically.</p>
+      <p class="muted" id="settings-scope">These settings are used the next time any device configuration is exported. Profiles already installed on devices do not update automatically. Saving these export defaults does not reconfigure AWG or nftables.</p>
       <label for="settings-name">Server name</label><input id="settings-name" maxlength="64" required autocomplete="off" aria-describedby="settings-name-help">
       <p class="small muted field-help" id="settings-name-help">Shown in this panel and newly exported connection links.</p>
       <fieldset><legend>Client connection</legend>

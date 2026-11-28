@@ -116,19 +116,25 @@ func (s *Service) importArchiveLocked(ctx context.Context, in portable.Snapshot,
 	if selective {
 		importSnapshot = s.Store.ImportSelected
 	}
-	next, err := importSnapshot(apply, in, fingerprint, func(state model.State) error { touched = true; return s.Network.ApplyAddresses(apply, state, prepared) })
+	next, err := importSnapshot(apply, in, fingerprint, func(state model.State) error {
+		s.ApplicationStarted()
+		touched = true
+		return s.Network.ApplyAddresses(apply, state, prepared)
+	})
 	if err != nil {
 		if errors.Is(err, store.ErrImportCommit) {
 			s.fail(err)
 			return err
 		}
 		if touched {
+			s.setApplication("error", false)
 			restore, stop := context.WithTimeout(context.Background(), 30*time.Second)
 			defer stop()
 			if e := s.Network.ApplyAddresses(restore, s.State, &oldNetwork); e != nil {
 				s.fail(e)
 				return fmt.Errorf("import failed; service is restarting with the previous database")
 			}
+			s.ApplicationApplied()
 			return fmt.Errorf("network apply failed; previous database and network restored")
 		}
 		return err
@@ -153,6 +159,7 @@ func (s *Service) importArchiveLocked(ctx context.Context, in portable.Snapshot,
 		s.observedAt = time.Time{}
 	}
 	s.observationOK = false
+	s.ApplicationApplied()
 	return nil
 }
 

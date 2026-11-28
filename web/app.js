@@ -59,6 +59,7 @@ const notify = (message, error = false) => {
   }
 };
 function signedOut() {
+ stopNetworkPolling();$('network-status').hidden=true;$('network-reapply-confirm').checked=false;$('network-reapply-options').open=false;
   for (const panel of document.querySelectorAll('.panel')) hidePanel(panel.id);
   currentPanel = 'login-view'; deviceOwner = ''; $('navigation').hidden = true;
   clearTransferSecrets(); clearMFASecrets(); resetLoginStep();
@@ -74,8 +75,15 @@ async function api(path, method = 'GET', body, signal) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET') headers['X-CSRF-Token'] = csrf;
-  const response = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin', cache: 'no-store', signal });
-  const data = await response.json();
+  const networkChange = account?.role === 'superadmin' && method !== 'GET' && (path.startsWith('/peers') || path.startsWith('/accounts') || ['/addresses','/transfer/import','/network-reapply'].includes(path));
+  if(networkChange){networkChanges++;renderNetworkStatus({state:'applying'});}
+  let response,data;
+  try {
+   response = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin', cache: 'no-store', signal });
+   data = await response.json();
+  } finally {
+   if(networkChange){networkChanges--;if(csrf&&account?.role==='superadmin')void pollNetworkStatus();}
+  }
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/login')) signedOut();
     const error = new Error(data.error || 'Request failed'); error.status = response.status; throw error;
@@ -102,7 +110,7 @@ async function load() {
   if (currentPanel === 'login-view') openPanel('dashboard'); $('logout').hidden = false;
   $('network-mode').textContent = session.ipv6 ? 'IPv4 + IPv6' : 'IPv4';
   $('endpoint').textContent = session.endpoint; ipv6 = session.ipv6; $('settings').hidden = session.role !== 'superadmin'; showServerName(session.serverName || 'AWG Panel');
-  render(); startActivityPolling();
+  render(); startActivityPolling();startNetworkPolling();
 }
 function button(text, handler, className = 'quiet') {
   const b = document.createElement('button'); b.textContent = text; b.className = className;
@@ -382,7 +390,7 @@ $('settings-form').addEventListener('submit', event => {
         allowedIPs: $('settings-routes').value.split(/[\s,]+/).filter(Boolean)}
     });
     fillSettings(settings); showServerName(settings.serverName);
-    notify('Settings saved. New exports use these values. Reimport profiles on devices to use the changes.');
+    notify('Export defaults saved. Update existing client profiles only if you want them to use the new DNS, MTU, keepalive or routes. Server name changes do not require reconnecting.');
   });
 });
 async function openAddresses() {
@@ -401,7 +409,7 @@ $('addresses-form').addEventListener('submit', event => {
   busy(event.submitter, async () => {
     const next = await api('/addresses', 'PUT', {revision: addressesRevision, vpnHost: $('vpn-host').value.trim(), panelOrigin: $('panel-origin').value.trim()});
     signedOut();
-    notify(`Addresses saved. Sign in again${next.panelOrigin ? ` at ${next.panelOrigin}` : ' through your VPN or local panel address'}. Existing client profiles need their VPN endpoint updated.`);
+    notify(`Addresses saved. Sign in again${next.panelOrigin ? ` at ${next.panelOrigin}` : ' through your VPN or local panel address'}. Update the Endpoint in existing client profiles only if the VPN domain/IP changed; changing the panel address alone does not affect VPN profiles.`);
   });
 });
 async function openPassword() {
@@ -870,5 +878,42 @@ $('transfer-confirm-form').addEventListener('submit', event => {
 $('my-devices').addEventListener('click', ownDevices);
 $('brand').addEventListener('click', event => { event.preventDefault(); if (account && !pendingActions) ownDevices(); });
 $('devices-back').addEventListener('click', () => busy($('devices-back'), openAccounts));
+
+
+let networkTimer=null,networkAbort=null,networkSequence=0,networkChanges=0;
+function stopNetworkPolling(){clearTimeout(networkTimer);networkTimer=null;networkSequence++;networkAbort?.abort();networkAbort=null;}
+function renderNetworkStatus(status){
+ if(!csrf||account?.role!=='superadmin')return;
+ $('network-status').hidden=false;
+ const state=networkChanges?'applying':status.state;
+ const labels={applied:'VPN configuration applied',applying:'Applying VPN configuration…',error:status.restarting?'Application failed — service is restarting':'Network check failed',unknown:'Application status unavailable'};
+ $('network-status-text').textContent=labels[state]||labels.unknown;
+ $('network-reapply').disabled=state==='applying'||status.restarting||!$('network-reapply-confirm').checked;
+ const details=[];
+ if(status.lastApplied&&!status.lastApplied.startsWith('0001'))details.push('Last applied: '+new Date(status.lastApplied).toLocaleString());
+ if(status.lastFailure&&!status.lastFailure.startsWith('0001'))details.push('Last failure: '+new Date(status.lastFailure).toLocaleString());
+ if(state==='error')details.push(status.restarting?'Wait for the application to reload the saved configuration.':'Reapply the saved configuration or check server diagnostics.');
+ if(state==='unknown')details.push('The result is not confirmed. Refresh after the service reconnects.');
+ $('network-status-detail').textContent=details.join(' · ');
+}
+async function pollNetworkStatus(){
+ if(!csrf||account?.role!=='superadmin'||networkAbort)return;
+ const sequence=networkSequence,controller=new AbortController();networkAbort=controller;
+ const timeout=setTimeout(()=>controller.abort(),4000);
+ try {const result=await api('/network-status','GET',undefined,controller.signal);if(sequence===networkSequence)renderNetworkStatus(result);}
+ catch {if(sequence===networkSequence)renderNetworkStatus({state:'unknown'});}
+ finally {clearTimeout(timeout);if(networkAbort===controller)networkAbort=null;}
+}
+function startNetworkPolling(){
+ stopNetworkPolling();if(account?.role!=='superadmin')return;
+ const sequence=networkSequence;
+ const tick=async()=>{await pollNetworkStatus();if(sequence===networkSequence&&csrf)networkTimer=setTimeout(tick,10000);};void tick();
+}
+$('network-reapply-confirm').addEventListener('change',()=>{void pollNetworkStatus();});
+$('network-reapply').addEventListener('click',()=>busy($('network-reapply'),async()=>{
+ if(!$('network-reapply-confirm').checked)throw new Error('Confirm the possible VPN interruption first.');
+ try {const result=await api('/network-reapply','POST',{confirm:true});renderNetworkStatus(result);notify('Saved VPN configuration reapplied. Keys and settings were not changed.');}
+ finally {$('network-reapply-confirm').checked=false;$('network-reapply-options').open=false;void pollNetworkStatus();}
+}).finally(()=>{if(!$('network-reapply-confirm').checked)$('network-reapply').disabled=true;}));
 
 load().catch(error => { signedOut(); if (error.message !== 'Authentication required') notify(error.message, true); });
