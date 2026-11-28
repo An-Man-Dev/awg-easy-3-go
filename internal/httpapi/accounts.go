@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"awg-panel/internal/model"
 	"awg-panel/internal/service"
 	"awg-panel/internal/store"
 	"errors"
@@ -57,14 +58,15 @@ func (a *API) accounts(w http.ResponseWriter, r *http.Request, sess session) {
 		return
 	}
 	var v struct {
-		Note      string `json:"note"`
-		Login     string `json:"login"`
-		Role      string `json:"role"`
-		ManagerID string `json:"managerId"`
-		Enabled   bool   `json:"enabled"`
-		Revision  int64  `json:"revision"`
-		Password  string `json:"password"`
-		Confirm   bool   `json:"confirm"`
+		DeviceLimit *int   `json:"deviceLimit"`
+		Note        string `json:"note"`
+		Login       string `json:"login"`
+		Role        string `json:"role"`
+		ManagerID   string `json:"managerId"`
+		Enabled     bool   `json:"enabled"`
+		Revision    int64  `json:"revision"`
+		Password    string `json:"password"`
+		Confirm     bool   `json:"confirm"`
 	}
 	if !decode(w, r, &v) {
 		return
@@ -74,7 +76,19 @@ func (a *API) accounts(w http.ResponseWriter, r *http.Request, sess session) {
 		problem(w, 400, "Confirm account deletion")
 		return
 	}
-	next := store.Account{Note: v.Note, ID: id, Login: v.Login, Role: v.Role, ManagerID: v.ManagerID, Enabled: v.Enabled, Revision: v.Revision}
+	limit := model.DefaultDeviceLimit
+	if id != "" {
+		old, err := a.service.Store.Account(id)
+		if err != nil {
+			problem(w, 404, "Account not found")
+			return
+		}
+		limit = old.DeviceLimit
+	}
+	if v.DeviceLimit != nil {
+		limit = *v.DeviceLimit
+	}
+	next := store.Account{DeviceLimit: limit, Note: v.Note, ID: id, Login: v.Login, Role: v.Role, ManagerID: v.ManagerID, Enabled: v.Enabled, Revision: v.Revision}
 	if remove {
 		// Deletion accepts just confirmation and the current revision.
 		old, err := a.service.Store.Account(id)

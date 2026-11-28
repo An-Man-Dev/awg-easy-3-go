@@ -9,11 +9,11 @@ import (
 
 func TestAccountBlockingProjectionAndRootConstraints(t *testing.T) {
 	s := initialized(t)
-	admin, err := s.WriteAccount(model.BootstrapAccountID, Account{Login: "manager", Role: "admin", Enabled: true}, testPassword, false)
+	admin, err := s.WriteAccount(model.BootstrapAccountID, Account{Login: "manager", Role: "admin", DeviceLimit: 10, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := s.WriteAccount(admin.ID, Account{Login: "member", Role: "user", ManagerID: admin.ID, Enabled: true}, testPassword, false)
+	user, err := s.WriteAccount(admin.ID, Account{Login: "member", Role: "user", DeviceLimit: 10, ManagerID: admin.ID, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}

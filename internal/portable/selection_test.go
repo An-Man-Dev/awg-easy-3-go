@@ -48,6 +48,7 @@ func TestSelectionDeviceMappingConflictsAndKeyPreservation(t *testing.T) {
 	a.ID = "source-admin"
 	a.Login = "manager"
 	a.Role = "admin"
+	a.DeviceLimit = 10
 	incoming.Accounts = append(incoming.Accounts, a)
 	p, err := model.NewPeer("Imported guest", "guest", 3, a.ID)
 	if err != nil {
@@ -99,5 +100,40 @@ func TestSelectionDeviceMappingConflictsAndKeyPreservation(t *testing.T) {
 	choice.DropIncompatibleKeys = true
 	if _, _, err = Merge(current, incoming, choice); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSelectionDeviceQuotasAndAccountMapping(t *testing.T) {
+	current := fixture(t)
+	admin := current.Accounts[0]
+	admin.ID = "quota-admin"
+	admin.Login = "manager"
+	admin.Role = "admin"
+	admin.DeviceLimit = 0
+	current.Accounts = append(current.Accounts, admin)
+	incoming := current
+	incoming.Accounts = append([]Account{}, current.Accounts...)
+	incoming.Accounts[1].DeviceLimit = 1
+	p, err := model.NewPeer("Guest", "guest", 3, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incoming.State.Peers = append(append([]model.Peer{}, current.State.Peers...), p)
+	choice := Selection{Devices: []DeviceChoice{{ID: p.ID, Action: "add"}}}
+	if _, _, err = Merge(current, incoming, choice); err == nil {
+		t.Fatal("unselected quota imported implicitly")
+	}
+	choice.Accounts = []AccountChoice{{ID: admin.ID, Action: "map", TargetID: admin.ID}}
+	if _, _, err = Merge(current, incoming, choice); err == nil {
+		t.Fatal("mapping overwrote quota")
+	}
+	choice.Accounts[0].Action = "replace"
+	result, _, err := Merge(current, incoming, choice)
+	if err != nil || result.Accounts[1].DeviceLimit != 1 {
+		t.Fatal("explicit quota not imported", err)
+	}
+	incoming.Accounts[1].DeviceLimit = -1
+	if err = incoming.Validate(); err == nil {
+		t.Fatal("negative quota accepted")
 	}
 }

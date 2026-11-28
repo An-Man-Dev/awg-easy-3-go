@@ -155,11 +155,11 @@ func TestReplacePopulatedInstallationAndRollback(t *testing.T) {
 	source := initialized(t)
 	incoming := transferSnapshot(t, source)
 	dest := initialized(t)
-	admin, err := dest.WriteAccount(model.BootstrapAccountID, Account{Login: "oldmanager", Role: "admin", Enabled: true}, testPassword, false)
+	admin, err := dest.WriteAccount(model.BootstrapAccountID, Account{Login: "oldmanager", Role: "admin", DeviceLimit: 10, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := dest.WriteAccount(admin.ID, Account{Login: "olduser", Role: "user", ManagerID: admin.ID, Enabled: true}, testPassword, false)
+	user, err := dest.WriteAccount(admin.ID, Account{Login: "olduser", Role: "user", DeviceLimit: 10, ManagerID: admin.ID, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}

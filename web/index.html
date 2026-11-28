@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="dark light">
   <title>AWG Panel</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=settings-audit-20261128">
-  <script src="/app.js?v=settings-audit-20261128" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=device-quotas-20261128">
+  <script src="/app.js?v=device-quotas-20261128" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -214,6 +214,7 @@
       <p class="small muted">Lowercase letters, digits, dots, underscores and hyphens. Start with a letter or digit.</p>
       <div id="account-note-field"><label for="account-note">Administrator note</label><textarea id="account-note" rows="3" maxlength="2000" aria-describedby="account-note-help"></textarea><p id="account-note-help" class="small muted">Visible only to the managing administrator and superadministrator. Transfers with the user. Up to 2000 UTF-8 bytes.</p></div>
       <label for="account-role">Role</label><select id="account-role"><option value="user">User</option><option value="admin">Administrator</option><option value="superadmin">Superadministrator</option></select>
+      <div id="account-quota-field"><label for="account-quota">Device limit</label><input id="account-quota" type="number" min="0" max="253" step="1" value="10" required><p class="small muted">Own devices, including disabled ones. Only the superadministrator can change this limit. Lowering it keeps existing devices; 0 prevents adding devices.</p></div>
       <div id="account-manager-field"><label for="account-manager">Managing administrator</label><select id="account-manager"></select><p class="small muted">Transferring a user also transfers management of their devices. The previous administrator loses access.</p></div>
       <label class="confirmation"><input type="checkbox" id="account-enabled" checked> Account enabled</label>
       <p class="muted">Blocking an account signs it out and disables its VPN access. Blocking an administrator also blocks their users. Unblocking restores only devices whose own switch is enabled.</p>

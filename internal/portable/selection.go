@@ -203,7 +203,7 @@ func Merge(current, incoming Snapshot, selection Selection) (Snapshot, MergePlan
 			indices[a.ID] = len(out.Accounts)
 			out.Accounts = append(out.Accounts, a)
 		}
-		plan.Changes = append(plan.Changes, choice.Action+" account: "+a.Login)
+		plan.Changes = append(plan.Changes, fmt.Sprintf("%s account: %s (device limit: %s)", choice.Action, a.Login, quotaLabel(a)))
 		if choice.Password {
 			plan.Warnings = append(plan.Warnings, "Import password for "+a.Login)
 		}
@@ -320,9 +320,25 @@ func Merge(current, incoming Snapshot, selection Selection) (Snapshot, MergePlan
 	if len(plan.Changes) == 0 {
 		return fail("Select at least one setting, account or device")
 	}
+	limits := map[string]int{}
+	for _, a := range out.Accounts {
+		if a.Role != "superadmin" {
+			limits[a.ID] = a.DeviceLimit
+		}
+	}
+	if model.CheckDeviceQuotaGrowth(current.State.Peers, out.State.Peers, limits) != nil {
+		return fail("Device quota exceeded; import the owner's quota with the account, raise it first, or select fewer devices")
+	}
 	out.State = out.RuntimeState()
 	if err := out.Validate(); err != nil {
 		return fail("Selected combination is invalid; check account hierarchy, home access and device parameters")
 	}
 	return out, plan, nil
+}
+
+func quotaLabel(a Account) string {
+	if a.Role == "superadmin" {
+		return "unlimited"
+	}
+	return fmt.Sprint(a.DeviceLimit)
 }

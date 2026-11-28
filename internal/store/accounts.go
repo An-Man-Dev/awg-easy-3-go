@@ -10,6 +10,8 @@ import (
 )
 
 type Account struct {
+	DeviceCount  int    `json:"deviceCount"`
+	DeviceLimit  int    `json:"deviceLimit"`
 	Note         string `json:"note,omitempty"`
 	ID           string `json:"id"`
 	Login        string `json:"login"`
@@ -99,7 +101,7 @@ func (s *Store) Account(id string) (Account, error) {
 	defer cancel()
 	var a Account
 	err := s.db.QueryRowContext(ctx, "SELECT "+accountColumns+",a.password_hash FROM accounts a LEFT JOIN accounts m ON m.id=a.manager_id WHERE a.id=?", id).
-		Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.Revision, &a.CreatedAt, &a.Active, &a.TOTPEnabled, &a.Note, &a.PasswordHash)
+		Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.Revision, &a.CreatedAt, &a.Active, &a.TOTPEnabled, &a.Note, &a.DeviceLimit, &a.DeviceCount, &a.PasswordHash)
 	if err == nil && !auth.ValidPasswordHash(a.PasswordHash) {
 		err = fmt.Errorf("invalid stored credentials")
 	}

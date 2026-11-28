@@ -120,6 +120,13 @@ func (s *Service) IssueFor(ctx context.Context, actor, owner, id, name, group, e
 		if !s.canManageOwner(actor, owner) {
 			return Issuance{}, ErrAccess
 		}
+		account, err := s.Store.Account(owner)
+		if err != nil {
+			return Issuance{}, err
+		}
+		if account.Role != "superadmin" && account.DeviceCount >= account.DeviceLimit {
+			return Issuance{}, store.ErrDeviceQuota
+		}
 	} else if !s.canAccessDevice(actor, id) {
 		return Issuance{}, ErrAccess
 	}

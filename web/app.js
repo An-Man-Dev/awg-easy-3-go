@@ -124,7 +124,9 @@ function render() {
   const owned = peers.filter(p => p.ownerId === (deviceOwner || account?.accountId));
   $('devices-title').textContent = !deviceOwner || deviceOwner === account?.accountId ? 'My devices' : `${accounts.find(a => a.id === deviceOwner)?.login || 'Account'} · Devices`;
   $('devices-back').hidden = !deviceOwner || deviceOwner === account?.accountId;
-  $('device-count').textContent = owned.length;
+  const owner = accounts.find(a => a.id === (deviceOwner || account?.accountId));
+  $('device-count').textContent = `${owned.length} / ${owner?.role === 'superadmin' ? '∞' : owner?.deviceLimit ?? '—'}`;
+  $('device-count').title = 'Own devices / device limit, including disabled devices';
   $('enabled-count').textContent = owned.filter(p => p.enabled && !p.accountBlocked).length;
   const query = $('search').value.toLowerCase(), group = $('filter').value;
   const visible = owned.filter(p => (group === 'all' || p.group === group) && `${p.name} ${p.address4} ${p.address6 || ''}`.toLowerCase().includes(query));
@@ -499,7 +501,7 @@ async function openAccounts() {
     const row = textElement('article', '', 'account-row account-card');
     const info = textElement('div', '', 'account-info'); row.dataset.id = a.id;
     const heading = textElement('div', '', 'account-heading');
-    heading.append(textElement('h3', a.login), textElement('span', `${a.role} · ${a.active ? 'Active' : a.enabled ? 'Blocked by administrator' : 'Blocked'} · Two-factor: ${a.totpEnabled ? 'Enabled' : 'Off'}`, 'small muted'));
+    heading.append(textElement('h3', a.login), textElement('span', `${a.role} · ${a.active ? 'Active' : a.enabled ? 'Blocked by administrator' : 'Blocked'} · Two-factor: ${a.totpEnabled ? 'Enabled' : 'Off'} · Devices: ${a.deviceCount}/${a.role === 'superadmin' ? '∞' : a.deviceLimit}`, 'small muted'));
     info.append(heading);
     if (a.managerId) info.append(textElement('p', `Managed by ${accounts.find(m => m.id === a.managerId)?.login || a.managerId}`, 'small muted'));
     const actions = textElement('div', '', 'actions');
@@ -520,6 +522,9 @@ async function openAccounts() {
 }
 function accountFields() {
   const user = $('account-role').value === 'user';
+  const unlimited = $('account-role').value === 'superadmin';
+  $('account-quota-field').hidden = unlimited;
+  $('account-quota').disabled = unlimited || account.role !== 'superadmin';
   $('account-manager-field').hidden = !user || account.role === 'admin';
   $('account-manager').required = user; $('account-manager').disabled = !user;
   const blocking = Boolean(editingAccount?.enabled) && !$('account-enabled').checked;
@@ -529,6 +534,7 @@ function editAccount(value = null) {
   editingAccount = value; $('account-form').reset();
   $('account-note-field').hidden = account.role !== 'superadmin' && value?.id === account.accountId;
   $('account-note').value = value?.note || '';
+  $('account-quota').value = value?.deviceLimit ?? 10;
   const self = value?.id === account.accountId;
   $('account-edit-title').textContent = value ? `Edit ${value.login}` : 'Add account';
   $('account-login').value = value?.login || '';
@@ -556,6 +562,7 @@ $('account-form').addEventListener('submit', event => {
     const role = $('account-role').value;
     const note = $('account-note').value; if (new TextEncoder().encode(note).length > 2000) throw new Error('Note must not exceed 2000 bytes.');
     const next = {note, login: $('account-login').value.trim(), role, managerId: role === 'user' ? $('account-manager').value : '', enabled: $('account-enabled').checked, revision: editingAccount?.revision || 0, password};
+    if (account.role === 'superadmin' && role !== 'superadmin') next.deviceLimit = Number($('account-quota').value);
     const self = editingAccount?.id === account.accountId;
     await api(editingAccount ? `/accounts/${editingAccount.id}` : '/accounts', editingAccount ? 'PUT' : 'POST', next);
     $('account-password').value = ''; closePanel('account-edit-dialog');
@@ -781,7 +788,7 @@ function showTransferPlan(result, archive, selection) {
     const s = result.summary, current = result.current;
     const lines = [`Current server: ${current.serverName} · Accounts: ${current.accounts} · Devices: ${current.devices} · Saved client keys: ${current.storedKeys}`,
       `Current addresses: VPN ${current.vpnHost} · Panel ${current.panelOrigin || "VPN access only"}`,
-      selection ? "Selective import: unselected data and local activity history are preserved. Only explicitly selected credentials are imported. Compatible saved keys are kept when the archive has none; discarding incompatible keys requires explicit permission." : "Full replacement: settings, server keys, passwords, TOTP and recovery codes come from the archive. Existing saved client keys are removed even if the archive excludes them.",
+      selection ? "Selective import: unselected data and local activity history are preserved. Only explicitly selected credentials are imported. Compatible saved keys are kept when the archive has none; discarding incompatible keys requires explicit permission." : "Full replacement: settings, account quotas, server keys, passwords, TOTP and recovery codes come from the archive. Existing saved client keys are removed even if the archive excludes them.",
       "VPN connections may be interrupted. Existing profiles work only with compatible server/device keys, addresses and AWG parameters. All sessions are signed out.",
       ...(result.plan?.changes || []), ...(result.plan?.warnings || []),
       `Incoming server: ${s.serverName}`, `Created: ${new Date(s.createdAt).toLocaleString()}`, `VPN: ${s.vpnHost}`,
@@ -793,7 +800,11 @@ function showTransferPlan(result, archive, selection) {
     for (const [title, inventory] of [[selection ? 'Current objects' : 'Current objects — replaced or removed', result.currentInventory], ['Result after import', result.resultInventory || result.incomingInventory]]) {
       const details = document.createElement('details');
       details.append(textElement('summary', title));
-      for (const a of inventory.accounts) details.append(textElement('p', `${a.login} · ${a.role} · ${a.enabled === "true" ? "Enabled" : "Blocked"} · Manager: ${inventory.accounts.find(m=>m.id===a.managerId)?.login || "—"} · ${a.id}`, 'small'));
+      for (const a of inventory.accounts) details.append(textElement('p', `${a.login} · ${a.role} · ${a.enabled === "true" ? "Enabled" : "Blocked"} · Device limit: ${a.role === "superadmin" ? "Unlimited" : a.deviceLimit} · Manager: ${inventory.accounts.find(m=>m.id===a.managerId)?.login || "—"} · ${a.id}`, 'small'));
+      for (const a of inventory.accounts) {
+        const count = inventory.devices.filter(d => d.ownerId === a.id).length;
+        if (a.role !== 'superadmin' && count > Number(a.deviceLimit)) details.append(textElement('p', `${a.login}: ${count} devices exceed the limit of ${a.deviceLimit}. Existing devices stay; adding more is blocked.`, 'small'));
+      }
       for (const d of inventory.devices) {
         const owner = inventory.accounts.find(a => a.id === d.ownerId);
         details.append(textElement('p', `${d.name} · ${owner?.login || d.ownerId} · ${d.group} · ${d.enabled === "true" ? "Enabled" : "Disabled"} · 10.8.0.${d.slot} · ${d.id}`, 'small'));
@@ -820,7 +831,7 @@ function renderTransferSelection(result) {
  for (const [key,label] of settings) {const field=importCheck(label);field.input.value=key;$('transfer-selection-settings').append(field.wrapper);}
  const existing=result.currentInventory;
  for (const a of result.incomingInventory.accounts) {
-  const row=textElement('div','','account-row');row.append(textElement('strong',`${a.login} · ${a.role}`));
+  const row=textElement('div','','account-row');row.append(textElement('strong',`${a.login} · ${a.role} · Device limit: ${a.role === "superadmin" ? "Unlimited" : a.deviceLimit}`));
   const action=importSelect('Action',[['skip','Skip'],['add','Add'],['replace','Replace target'],['map','Map without changing target']]);
   const targets=existing.accounts.filter(x=>x.role===a.role);
   const target=importSelect('Target account',[]);

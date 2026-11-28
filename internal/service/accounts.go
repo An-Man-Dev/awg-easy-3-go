@@ -88,6 +88,9 @@ func (s *Service) WriteAccount(ctx context.Context, actor string, next store.Acc
 	if s.failed {
 		return store.Account{}, fmt.Errorf("service is stopping")
 	}
+	if next.DeviceLimit < 0 || next.DeviceLimit > model.MaxDeviceLimit {
+		return store.Account{}, fmt.Errorf("device limit must be between 0 and 253")
+	}
 	if len(next.Note) > 2000 {
 		return store.Account{}, fmt.Errorf("note must not exceed 2000 bytes")
 	}
@@ -105,12 +108,18 @@ func (s *Service) WriteAccount(ctx context.Context, actor string, next store.Acc
 		return store.Account{}, ErrAccess
 	}
 	if next.ID == "" {
+		if a.Role != "superadmin" && next.DeviceLimit != model.DefaultDeviceLimit {
+			return store.Account{}, ErrAccess
+		}
 		if remove || next.Role == "superadmin" || (next.Role == "admin" && a.Role != "superadmin") {
 			return store.Account{}, ErrAccess
 		}
 	} else {
 		old, e := s.Store.Account(next.ID)
 		if e != nil || !a.CanManage(old) {
+			return store.Account{}, ErrAccess
+		}
+		if (a.Role != "superadmin" || old.Role == "superadmin") && next.DeviceLimit != old.DeviceLimit {
 			return store.Account{}, ErrAccess
 		}
 		if !a.CanManageNote(old) {

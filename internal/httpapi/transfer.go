@@ -196,7 +196,7 @@ func importInventory(s portable.Snapshot) map[string]any {
 	accounts := make([]map[string]string, 0, len(s.Accounts))
 	devices := make([]map[string]string, 0, len(s.State.Peers))
 	for _, a := range s.Accounts {
-		accounts = append(accounts, map[string]string{"id": a.ID, "login": a.Login, "role": a.Role, "managerId": a.ManagerID, "enabled": fmt.Sprint(a.Enabled)})
+		accounts = append(accounts, map[string]string{"id": a.ID, "login": a.Login, "role": a.Role, "managerId": a.ManagerID, "deviceLimit": fmt.Sprint(a.DeviceLimit), "enabled": fmt.Sprint(a.Enabled)})
 	}
 	for _, p := range s.State.Peers {
 		devices = append(devices, map[string]string{"id": p.ID, "name": p.Name, "ownerId": p.OwnerID, "slot": fmt.Sprint(p.Slot), "group": p.Group, "enabled": fmt.Sprint(p.Enabled)})

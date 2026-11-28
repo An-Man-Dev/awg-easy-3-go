@@ -23,7 +23,7 @@ func fixture(t *testing.T) Snapshot {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Snapshot{Version: 1, CreatedAt: time.Now().UTC(), ClientKeysIncluded: true, State: state,
+	return Snapshot{Version: Version, CreatedAt: time.Now().UTC(), ClientKeysIncluded: true, State: state,
 		Requirements: Requirements{Protocol: "amneziawg3", UDPPort: 51820, PanelPort: 8881, Subnet4: "10.8.0.0/24", Subnet6: "fd42:8::/64"},
 		Accounts:     []Account{{ID: model.BootstrapAccountID, Login: "admin", Role: "superadmin", Enabled: true, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), PasswordHash: hash}}}
 }

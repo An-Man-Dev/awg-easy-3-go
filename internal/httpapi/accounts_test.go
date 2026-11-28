@@ -12,7 +12,7 @@ import (
 
 func accountFixture(t *testing.T, a *API, login, role, manager string) store.Account {
 	t.Helper()
-	v, err := a.service.Store.WriteAccount(model.BootstrapAccountID, store.Account{Login: login, Role: role, Enabled: true, ManagerID: manager}, "account-test-password", false)
+	v, err := a.service.Store.WriteAccount(model.BootstrapAccountID, store.Account{Login: login, Role: role, DeviceLimit: 10, Enabled: true, ManagerID: manager}, "account-test-password", false)
 	if err != nil {
 		t.Fatal(err)
 	}

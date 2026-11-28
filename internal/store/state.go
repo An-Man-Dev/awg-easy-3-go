@@ -118,6 +118,9 @@ func (s *Store) SaveAudited(state model.State, audit AuditRecord) error {
 	if !initialized {
 		return fmt.Errorf("database is not initialized")
 	}
+	if err = checkDeviceQuota(ctx, tx, state.Peers); err != nil {
+		return err
+	}
 	if err = saveState(ctx, tx, state); err != nil {
 		return err
 	}

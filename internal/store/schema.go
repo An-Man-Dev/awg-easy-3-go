@@ -1,8 +1,8 @@
 package store
 
-// Schema 9 is a pre-alpha schema. Reject unsupported versions without resetting data.
+// Schema 10 is a pre-alpha schema. Reject unsupported versions without resetting data.
 // The first release will establish the baseline for versioned migrations.
-const schemaVersion = 9
+const schemaVersion = 10
 const applicationID = 0x41574750 // AWGP
 
 const schema = `
@@ -14,6 +14,7 @@ CREATE TABLE metadata (
 INSERT INTO metadata VALUES (1, 0, 1);
 CREATE TABLE accounts (
  id TEXT PRIMARY KEY NOT NULL,
+ device_limit INTEGER NOT NULL DEFAULT 10 CHECK(device_limit BETWEEN 0 AND 253),
  note TEXT NOT NULL DEFAULT '' CHECK(length(CAST(note AS BLOB))<=2000),
  login TEXT NOT NULL UNIQUE CHECK (length(login) BETWEEN 1 AND 64),
  password_hash TEXT NOT NULL,

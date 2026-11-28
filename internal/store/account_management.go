@@ -50,11 +50,11 @@ func (s *Store) Audit() ([]AuditEntry, error) {
 	return result, rows.Err()
 }
 
-const accountColumns = `a.id,a.login,a.role,a.enabled,COALESCE(a.manager_id,''),a.revision,a.created_at,(a.enabled=1 AND (a.manager_id IS NULL OR m.enabled=1)),EXISTS(SELECT 1 FROM account_totp t WHERE t.account_id=a.id),a.note`
+const accountColumns = `a.id,a.login,a.role,a.enabled,COALESCE(a.manager_id,''),a.revision,a.created_at,(a.enabled=1 AND (a.manager_id IS NULL OR m.enabled=1)),EXISTS(SELECT 1 FROM account_totp t WHERE t.account_id=a.id),a.note,a.device_limit,(SELECT count(*) FROM devices d WHERE d.owner_id=a.id)`
 
 func scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 	var a Account
-	err := row.Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.Revision, &a.CreatedAt, &a.Active, &a.TOTPEnabled, &a.Note)
+	err := row.Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.Revision, &a.CreatedAt, &a.Active, &a.TOTPEnabled, &a.Note, &a.DeviceLimit, &a.DeviceCount)
 	return a, err
 }
 func (s *Store) Accounts() ([]Account, error) {
@@ -94,6 +94,9 @@ func (s *Store) AccountByLogin(login string) (Account, error) {
 // Called while the service serializes account/device changes. Role is immutable;
 // superadministrator provisioning and removal are deliberately not exposed here.
 func (s *Store) WriteAccount(actor string, next Account, password string, remove bool) (Account, error) {
+	if next.DeviceLimit < 0 || next.DeviceLimit > model.MaxDeviceLimit {
+		return Account{}, fmt.Errorf("device limit must be between 0 and 253")
+	}
 	if len(next.Note) > 2000 {
 		return Account{}, fmt.Errorf("note must not exceed 2000 bytes")
 	}
@@ -144,10 +147,10 @@ func (s *Store) WriteAccount(actor string, next Account, password string, remove
 		next.ID = model.Random(16)
 		next.Revision = 1
 		next.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-		_, err = tx.ExecContext(ctx, "INSERT INTO accounts(id,login,password_hash,role,enabled,manager_id,created_at,note,revision) VALUES(?,?,?,?,?,NULLIF(?,''),?,?,1)", next.ID, next.Login, hash, next.Role, next.Enabled, next.ManagerID, next.CreatedAt, next.Note)
+		_, err = tx.ExecContext(ctx, "INSERT INTO accounts(id,login,password_hash,role,enabled,manager_id,created_at,note,device_limit,revision) VALUES(?,?,?,?,?,NULLIF(?,''),?,?,?,1)", next.ID, next.Login, hash, next.Role, next.Enabled, next.ManagerID, next.CreatedAt, next.Note, next.DeviceLimit)
 		action = "account.create"
 	} else {
-		result, e := tx.ExecContext(ctx, `UPDATE accounts SET note=?,login=?,enabled=?,manager_id=NULLIF(?,''),password_hash=CASE WHEN ?='' THEN password_hash ELSE ? END,revision=revision+1 WHERE id=? AND revision=? AND role=?`, next.Note, next.Login, next.Enabled, next.ManagerID, hash, hash, next.ID, next.Revision, next.Role)
+		result, e := tx.ExecContext(ctx, `UPDATE accounts SET device_limit=?,note=?,login=?,enabled=?,manager_id=NULLIF(?,''),password_hash=CASE WHEN ?='' THEN password_hash ELSE ? END,revision=revision+1 WHERE id=? AND revision=? AND role=?`, next.DeviceLimit, next.Note, next.Login, next.Enabled, next.ManagerID, hash, hash, next.ID, next.Revision, next.Role)
 		err = e
 		if err == nil {
 			n, e := result.RowsAffected()

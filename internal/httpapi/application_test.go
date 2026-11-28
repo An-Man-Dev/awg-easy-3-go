@@ -22,7 +22,7 @@ func TestNetworkStatusAndRetryAuthorization(t *testing.T) {
 	if w := request(a, "POST", "/api/network-reapply", `{"confirm":false}`, root, "test-csrf", origin); w.Code != 400 {
 		t.Fatal("confirmation bypass", w.Code)
 	}
-	admin, err := a.service.Store.WriteAccount(model.BootstrapAccountID, store.Account{Login: "status-admin", Role: "admin", Enabled: true}, "test-password-12345", false)
+	admin, err := a.service.Store.WriteAccount(model.BootstrapAccountID, store.Account{Login: "status-admin", Role: "admin", DeviceLimit: 10, Enabled: true}, "test-password-12345", false)
 	if err != nil {
 		t.Fatal(err)
 	}

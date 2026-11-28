@@ -160,11 +160,11 @@ func TestMFARecoveryReplacementPasswordAndOfflineReset(t *testing.T) {
 }
 func TestAdminMFAResetEnforcesHierarchyAndOwnFactor(t *testing.T) {
 	s, root, rootCodes := enrolled(t)
-	manager, err := s.WriteAccount(root.ID, Account{Login: "manager", Role: "admin", Enabled: true}, testPassword, false)
+	manager, err := s.WriteAccount(root.ID, Account{Login: "manager", Role: "admin", DeviceLimit: 10, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := s.WriteAccount(root.ID, Account{Login: "member", Role: "user", ManagerID: manager.ID, Enabled: true}, testPassword, false)
+	user, err := s.WriteAccount(root.ID, Account{Login: "member", Role: "user", DeviceLimit: 10, ManagerID: manager.ID, Enabled: true}, testPassword, false)
 	if err != nil {
 		t.Fatal(err)
 	}

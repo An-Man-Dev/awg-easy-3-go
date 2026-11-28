@@ -22,19 +22,19 @@ func (s *Store) ImportAvailable() bool {
 	return err == nil && initialized
 }
 func (s *Store) snapshot(ctx context.Context, tx *sql.Tx) (portable.Snapshot, error) {
-	out := portable.Snapshot{Version: 1, CreatedAt: time.Now().UTC(), ClientKeysIncluded: true, Accounts: []portable.Account{}}
+	out := portable.Snapshot{Version: portable.Version, CreatedAt: time.Now().UTC(), ClientKeysIncluded: true, Accounts: []portable.Account{}}
 	var err error
 	out.State, err = loadState(ctx, tx)
 	if err != nil {
 		return out, err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT id,login,role,enabled,COALESCE(manager_id,''),created_at,password_hash,note FROM accounts ORDER BY id")
+	rows, err := tx.QueryContext(ctx, "SELECT id,login,role,enabled,COALESCE(manager_id,''),created_at,password_hash,note,device_limit FROM accounts ORDER BY id")
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var a portable.Account
-		if err = rows.Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.CreatedAt, &a.PasswordHash, &a.Note); err != nil {
+		if err = rows.Scan(&a.ID, &a.Login, &a.Role, &a.Enabled, &a.ManagerID, &a.CreatedAt, &a.PasswordHash, &a.Note, &a.DeviceLimit); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -167,11 +167,11 @@ func (s *Store) importSnapshot(ctx context.Context, in portable.Snapshot, expect
 				continue
 			}
 			if selective && existed {
-				_, err = tx.ExecContext(ctx, "UPDATE accounts SET login=?,password_hash=?,enabled=?,manager_id=NULLIF(?,''),created_at=?,note=?,revision=revision+1 WHERE id=?", a.Login, a.PasswordHash, a.Enabled, a.ManagerID, a.CreatedAt, a.Note, a.ID)
+				_, err = tx.ExecContext(ctx, "UPDATE accounts SET login=?,password_hash=?,enabled=?,manager_id=NULLIF(?,''),created_at=?,note=?,device_limit=?,revision=revision+1 WHERE id=?", a.Login, a.PasswordHash, a.Enabled, a.ManagerID, a.CreatedAt, a.Note, a.DeviceLimit, a.ID)
 			} else if role == "superadmin" {
-				_, err = tx.ExecContext(ctx, "UPDATE accounts SET login=?,password_hash=?,created_at=?,note=?,revision=1 WHERE id=?", a.Login, a.PasswordHash, a.CreatedAt, a.Note, model.BootstrapAccountID)
+				_, err = tx.ExecContext(ctx, "UPDATE accounts SET login=?,password_hash=?,created_at=?,note=?,device_limit=?,revision=1 WHERE id=?", a.Login, a.PasswordHash, a.CreatedAt, a.Note, a.DeviceLimit, model.BootstrapAccountID)
 			} else {
-				_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,login,password_hash,role,enabled,manager_id,created_at,note,revision) VALUES(?,?,?,?,?,NULLIF(?,''),?,?,1)`, a.ID, a.Login, a.PasswordHash, a.Role, a.Enabled, a.ManagerID, a.CreatedAt, a.Note)
+				_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,login,password_hash,role,enabled,manager_id,created_at,note,device_limit,revision) VALUES(?,?,?,?,?,NULLIF(?,''),?,?,?,1)`, a.ID, a.Login, a.PasswordHash, a.Role, a.Enabled, a.ManagerID, a.CreatedAt, a.Note, a.DeviceLimit)
 			}
 			if err != nil {
 				return model.State{}, err
@@ -208,6 +208,11 @@ func (s *Store) importSnapshot(ctx context.Context, in portable.Snapshot, expect
 		}
 	}
 	state := in.RuntimeState()
+	if selective {
+		if err = checkDeviceQuota(ctx, tx, state.Peers); err != nil {
+			return model.State{}, err
+		}
+	}
 	if err = saveState(ctx, tx, state); err != nil {
 		return model.State{}, err
 	}

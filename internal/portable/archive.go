@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+const Version = 2
+
 const MaxSize = 8 << 20
 const magic = "AWGPACK1"
 const headerSize = 8 + 1 + 16 + 12
@@ -39,6 +41,7 @@ type MFA struct {
 	RecoveryHashes []string `json:"recoveryHashes"`
 }
 type Account struct {
+	DeviceLimit  int    `json:"deviceLimit"`
 	Note         string `json:"note,omitempty"`
 	ID           string `json:"id"`
 	Login        string `json:"login"`
@@ -105,7 +108,7 @@ func (s Snapshot) RuntimeState() model.State {
 func (s Snapshot) Validate() error {
 	invalid := func() error { return fmt.Errorf("archive contains invalid or unsupported configuration") }
 	r := s.Requirements
-	if s.Version != 1 || s.CreatedAt.IsZero() || r.Protocol != "amneziawg3" || r.UDPPort < 1 || r.UDPPort > 65535 || r.PanelPort < 1 || r.PanelPort > 65535 || r.Subnet4 != "10.8.0.0/24" || r.Subnet6 != "fd42:8::/64" {
+	if s.Version != Version || s.CreatedAt.IsZero() || r.Protocol != "amneziawg3" || r.UDPPort < 1 || r.UDPPort > 65535 || r.PanelPort < 1 || r.PanelPort > 65535 || r.Subnet4 != "10.8.0.0/24" || r.Subnet6 != "fd42:8::/64" {
 		return invalid()
 	}
 	if s.State.Settings == nil || s.State.Addresses == nil || s.State.KeyPolicy == nil || len(s.State.Peers) > 253 || len(s.Accounts) == 0 || len(s.Accounts) > 4096 {
@@ -121,6 +124,9 @@ func (s Snapshot) Validate() error {
 	loginPattern := regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}$`)
 	for _, a := range s.Accounts {
 		if _, ok := ids[a.ID]; ok {
+			return invalid()
+		}
+		if a.DeviceLimit < 0 || a.DeviceLimit > model.MaxDeviceLimit {
 			return invalid()
 		}
 		if len(a.Note) > 2000 {
